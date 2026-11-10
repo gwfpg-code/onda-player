@@ -123,7 +123,7 @@ export async function hello(): Promise<any> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         hardware_key: hardwareKey, secret: secret(), platform: process.platform,
-        version: `${app.getVersion()}-onda`, hostname: hostname(), displays,
+        version: app.getVersion().includes('onda') ? app.getVersion() : `${app.getVersion()}-onda`, hostname: hostname(), displays,
       }),
       signal: AbortSignal.timeout(15000),
     });

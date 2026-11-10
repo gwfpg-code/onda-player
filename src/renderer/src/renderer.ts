@@ -145,6 +145,36 @@ const resolveMainCallback = async () => {
   return mainCallback;
 };
 
+/**
+ * Onda: player non configurato. Prima il provisioning dalla console di Onda (codice sullo schermo);
+ * la configurazione manuale di Xibo resta come riserva. Usato sia al primo avvio sia quando main
+ * chiede la configurazione.
+ */
+const startUnconfigured = async (config: ConfigData) => {
+  if ($('#onda-screen').length) {
+    return;                    // già in corso (init e onConfigure possono arrivare entrambi)
+  }
+  const provisioned = (window as any).ondaAPI ? await runOndaScreen() : null;
+  if (provisioned === null) {
+    runConfigHandler(config);
+    return;
+  }
+  Object.assign(config, provisioned);
+  window.config = config;
+  const callback = await resolveMainCallback();
+  for (;;) {
+    try {
+      await window.apiHandler.xmdsTryRegister(config);
+      break;
+    } catch (error) {
+      // il motore può non essere ancora raggiungibile: si riprova, senza chiedere nulla sul posto
+      console.warn('[ONDA] Registrazione al motore non riuscita, nuovo tentativo tra 15 secondi', error);
+      await new Promise((r) => setTimeout(r, 15000));
+    }
+  }
+  await callback({ context: 'main' });
+};
+
 const runConfigHandler = async (config: ConfigData) => {
   const callback = await resolveMainCallback();
 
@@ -353,27 +383,7 @@ window.playerAPI.onConfigure(async (config: ConfigData) => {
   window.config = config;
 
   if (!config.cmsUrl) {
-    // Onda: prima il provisioning dalla console (codice sullo schermo); la configurazione manuale
-    // di Xibo resta come riserva.
-    const provisioned = (window as any).ondaAPI ? await runOndaScreen() : null;
-    if (provisioned === null) {
-      runConfigHandler(config);
-      return;
-    }
-    Object.assign(config, provisioned);
-    window.config = config;
-    const callback = await resolveMainCallback();
-    for (;;) {
-      try {
-        await window.apiHandler.xmdsTryRegister(config);
-        break;
-      } catch (error) {
-        // il motore può non essere ancora raggiungibile: si riprova, senza chiedere nulla sul posto
-        console.warn('[ONDA] Registrazione al motore non riuscita, nuovo tentativo tra 15 secondi', error);
-        await new Promise((r) => setTimeout(r, 15000));
-      }
-    }
-    await callback({ context: 'main' });
+    await startUnconfigured(config);
   } else {
     // Reached after first-boot registration completes, so this is the point the nav bar
     // becomes useful. Safe to call again if the player booted configured.
@@ -762,7 +772,7 @@ const init = async () => {
   });
 
   if (!config.isConfigured) {
-    runConfigHandler(config);
+    await startUnconfigured(config);
   } else {
     initNavBar();
 
