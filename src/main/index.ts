@@ -24,6 +24,7 @@ import { createHash } from 'crypto';
 import { installExtension, JQUERY_DEBUGGER } from 'electron-devtools-installer';
 import { app, WebContentsView, BrowserWindow, ipcMain, session, screen, powerSaveBlocker } from 'electron';
 import { describeDisplays, targetDisplay } from './onda/onda';
+import { guardWindow, initOnda } from './onda/provision';
 import { join } from 'path';
 import { optimizer, is, electronApp } from '@electron-toolkit/utils';
 import { Xmr } from '@xibosignage/xibo-communication-framework';
@@ -1989,7 +1990,12 @@ app.whenReady().then(() => {
     ensureAutostartEntry();
   }
 
-  createWindow();
+  createWindow().then(() => {
+    // Onda: provisioning, sincronizzazione delle impostazioni e PIN per la chiusura
+    initOnda({ hardwareKey: `${config.hardwareKey}`, configured: config.isConfigured(),
+      reapplyDisplay: () => mainWindow && !mainWindow.isDestroyed() && applyWindowGeometry(mainWindow) });
+    guardWindow(mainWindow);
+  });
 
   // Onda: monitor collegati o scollegati (es. TV accesa dopo il mini PC): riporta il player su quello scelto
   const ondaReapply = () => {

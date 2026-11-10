@@ -135,3 +135,14 @@ const playerApi: PlayerAPI = {
 };
 
 contextBridge.exposeInMainWorld('playerAPI', playerApi);
+
+// Onda: provisioning, PIN, monitor
+contextBridge.exposeInMainWorld('ondaAPI', {
+  status: () => ipcRenderer.invoke('onda-status'),
+  hello: () => ipcRenderer.invoke('onda-hello'),
+  setUrl: (url: string) => ipcRenderer.invoke('onda-set-url', url),
+  checkPin: (pin: string) => ipcRenderer.invoke('onda-check-pin', pin),
+  pinRequired: () => ipcRenderer.invoke('onda-pin-required'),
+  identify: () => ipcRenderer.invoke('onda-identify'),
+  quit: (pin: string) => ipcRenderer.invoke('onda-quit', pin),
+});

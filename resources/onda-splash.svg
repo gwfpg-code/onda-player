@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 160" width="400" height="160">
+  <!-- Onda Player: logo animato per la schermata di attesa -->
+  <style>
+    .wave { stroke-dasharray: 160; animation: draw 2.4s ease-in-out infinite alternate; }
+    .screen { animation: glow 2.4s ease-in-out infinite alternate; }
+    @keyframes draw { from { stroke-dashoffset: 160; } to { stroke-dashoffset: 0; } }
+    @keyframes glow { from { opacity: .75; } to { opacity: 1; } }
+  </style>
+  <rect class="screen" x="20" y="28" width="120" height="104" rx="30" fill="none" stroke="#F5F4F1" stroke-width="11"/>
+  <path class="wave" d="M42 84 C 58 62, 74 62, 80 80 S 102 98, 118 76" fill="none" stroke="#C8A15A" stroke-width="10" stroke-linecap="round"/>
+  <text x="152" y="122" font-family="Inter, 'DejaVu Sans', Arial, sans-serif" font-weight="700" font-size="100" fill="#F5F4F1">nda</text>
+</svg>

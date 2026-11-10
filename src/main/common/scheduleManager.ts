@@ -1,3 +1,4 @@
+import { managedByOnda } from '../onda/provision';
 import { createNanoEvents, Emitter } from "nanoevents";
 import Schedule from "../xmds/response/schedule/schedule";
 import { Layout } from "../xmds/response/schedule/events/layout";
@@ -270,8 +271,10 @@ export default class ScheduleManager {
         }
 
         // We must have at least 1 normal schedule before we assess interrupts.
+        // Onda: con il player gestito da Onda il layout predefinito del motore (logo Xibo) non va in onda,
+        // al suo posto resta la schermata di attesa scelta nel pannello
         if (layouts.length <= 0 &&
-          this.schedule &&
+          this.schedule && !managedByOnda() &&
           this.schedule.defaultLayout && await this.schedule.defaultLayout.isValid()
         ) {
             console.debug('[ScheduleManager::assessLayouts] > No layouts, showing default layout.', {
@@ -398,7 +401,7 @@ export default class ScheduleManager {
 
         // Ensure loop is never empty, fallback to default layout or splash screen
         if (loop.length === 0) {
-            if (this.schedule?.defaultLayout && await this.schedule.defaultLayout.isValid()) {
+            if (!managedByOnda() && this.schedule?.defaultLayout && await this.schedule.defaultLayout.isValid()) {
                 loop = [this.schedule.defaultLayout];
             } else {
                 loop = [this.getSplash()];

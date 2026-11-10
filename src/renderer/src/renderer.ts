@@ -30,6 +30,7 @@ import { ConfigHandler } from './ConfigHandler';
 import { ConfigData, SspAdData } from '@shared/types';
 import { htmlPackageDirName } from '@shared/htmlPackage';
 import logo from './assets/images/logo.png';
+import { askPin, runOndaScreen } from './onda/OndaScreen';
 import { DataConnectorManager } from './dataConnector/dataConnectorManager';
 
 // Base URL the local file server serves cached files from. Shared by XLR (for
@@ -352,7 +353,27 @@ window.playerAPI.onConfigure(async (config: ConfigData) => {
   window.config = config;
 
   if (!config.cmsUrl) {
-    runConfigHandler(config);
+    // Onda: prima il provisioning dalla console (codice sullo schermo); la configurazione manuale
+    // di Xibo resta come riserva.
+    const provisioned = (window as any).ondaAPI ? await runOndaScreen() : null;
+    if (provisioned === null) {
+      runConfigHandler(config);
+      return;
+    }
+    Object.assign(config, provisioned);
+    window.config = config;
+    const callback = await resolveMainCallback();
+    for (;;) {
+      try {
+        await window.apiHandler.xmdsTryRegister(config);
+        break;
+      } catch (error) {
+        // il motore può non essere ancora raggiungibile: si riprova, senza chiedere nulla sul posto
+        console.warn('[ONDA] Registrazione al motore non riuscita, nuovo tentativo tra 15 secondi', error);
+        await new Promise((r) => setTimeout(r, 15000));
+      }
+    }
+    await callback({ context: 'main' });
   } else {
     // Reached after first-boot registration completes, so this is the point the nav bar
     // becomes useful. Safe to call again if the player booted configured.
@@ -695,9 +716,21 @@ const initNavBar = () => {
     showStatusWindowFn(60); // Show for 60 seconds
   });
 
-  $('#nav-config').off('click').on('click', () => {
+  // Onda: configurazione e chiusura protette dal PIN impostato al provisioning
+  $('#nav-config').off('click').on('click', async () => {
     console.debug('[Renderer] config page triggered from the nav bar');
-    openConfigPage();
+    if ((await askPin('PIN per aprire la configurazione')) !== null) {
+      openConfigPage();
+    }
+  });
+
+  $('#nav-identify').off('click').on('click', () => (window as any).ondaAPI?.identify());
+
+  $('#nav-quit').off('click').on('click', async () => {
+    const pin = await askPin('PIN per chiudere il player');
+    if (pin !== null) {
+      await (window as any).ondaAPI?.quit(pin);
+    }
   });
 
   showNavBar();

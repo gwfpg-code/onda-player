@@ -19,6 +19,7 @@
  * along with Xibo.  If not, see <http://www.gnu.org/licenses/>.
  */
 import { splashFile } from './onda/onda';
+import { splashMode } from './onda/provision';
 import express from 'express';
 import corsImport from 'cors';
 import fs from 'fs/promises';
@@ -30,7 +31,7 @@ import { Config } from './config/config';
 import { Faults } from '../shared/faults/Faults';
 import { scheduleCriteriaManager } from '../shared/scheduleCriteria/scheduleCriteriaManager';
 import { realtimeDataStore } from './dataConnector/realtimeDataStore';
-import { resolve, sep } from 'path';
+import { join, resolve, sep } from 'path';
 
 import { SCREENSHOT_DIR_NAME } from '../shared/utils/screenshotDirectory';
 
@@ -73,7 +74,17 @@ export async function createFileServer(
   // Onda: schermata di attesa (quella del cliente, se l'ha copiata l'agente, altrimenti il logo Onda)
   server.get('/onda/splash', (_req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.sendFile(splashFile());
+    const mode = splashMode();
+    if (mode === 'black') {
+      res.type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
+      return;
+    }
+    const custom = splashFile();
+    if (mode === 'client' && !custom.endsWith('onda-splash.png')) {
+      res.sendFile(custom);
+      return;
+    }
+    res.sendFile(join(app.getAppPath(), 'resources', 'onda-splash.svg'));    // logo Onda animato
   });
 
   // Optional: list all files if /files/ is accessed directly
