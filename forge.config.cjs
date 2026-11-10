@@ -91,6 +91,9 @@ module.exports = {
       name: '@electron-forge/maker-deb',
       config: {
         options: {
+          // Onda: nome mostrato nel menu; eseguibile, cartella dei dati e pacchetto restano "onda-player"
+          productName: 'Onda Player',
+          genericName: 'Digital Signage Player',
           icon: 'resources/linux/icons/512x512.png',
           maintainer: 'Onda',
           homepage: 'https://github.com/gwfpg-code/onda-player',

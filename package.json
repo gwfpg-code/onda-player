@@ -73,6 +73,5 @@
     "@electron/node-gyp": "npm:node-gyp@^12.2.0",
     "node-gyp": "^12.2.0",
     "node-abi": "^3.94.0"
-  },
-  "productName": "Onda Player"
+  }
 }
