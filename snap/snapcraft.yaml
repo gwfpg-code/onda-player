@@ -1,17 +1,17 @@
-name: xibo-player
+name: onda-player
 base: core24
 version: '4.0.13'
-summary: Xibo Linux Player
-description: Xibo for Linux Digital Signage Player
+summary: Onda Player
+description: Onda Digital Signage Player (basato su Xibo Player, AGPLv3)
 confinement: strict
 # Must be 'stable' to be publishable to the stable channel. Devices running the legacy 1.8
 # player refresh in place from this same snap name, so a 'devel' grade blocks the upgrade.
 grade: stable
 
 apps:
-  xibo-player:
+  onda-player:
     extensions: [gnome]
-    command: xibo-player --no-sandbox
+    command: onda-player --no-sandbox
     plugs:
       # Required for Chromium to run under strict confinement at all, independently of the
       # sandbox: oom_score_adj writes, /sys and /run/udev reads for GPU probing, and the
@@ -38,7 +38,7 @@ apps:
 parts:
   app:
     plugin: dump
-    source: out/xibo-player-linux-x64
+    source: out/onda-player-linux-x64
     # STRATEGY: Move custom libraries into the standard system path
     # This prevents 'not found' errors because the loader checks here by default.
     organize:

@@ -18,6 +18,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with Xibo.  If not, see <http://www.gnu.org/licenses/>.
  */
+import { splashFile } from './onda/onda';
 import express from 'express';
 import corsImport from 'cors';
 import fs from 'fs/promises';
@@ -67,6 +68,12 @@ export async function createFileServer(
 
   server.get('/', (_req, res) => {
     res.send('Hello World!');
+  });
+
+  // Onda: schermata di attesa (quella del cliente, se l'ha copiata l'agente, altrimenti il logo Onda)
+  server.get('/onda/splash', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(splashFile());
   });
 
   // Optional: list all files if /files/ is accessed directly

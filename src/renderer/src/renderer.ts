@@ -312,7 +312,8 @@ export const startApp = async () => {
       hardwareKey: config.hardwareKey as string,
     },
     icons: {
-      splashScreen: logo,
+      // Onda: immagine servita dal player (personalizzabile per cliente), logo Onda di riserva
+      splashScreen: 'http://localhost:9696/onda/splash',
       logo: logo,
     },
     displayTags: config.displayTags ?? {},

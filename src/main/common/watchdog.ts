@@ -43,9 +43,9 @@ const RESTART_LOG_FILE = 'watchdog-restarts.json';
 
 const AUTOSTART_ENTRY = `[Desktop Entry]
 Type=Application
-Name=Xibo Player
-Comment=Xibo for Linux Digital Signage Player
-Exec=xibo-player
+Name=Onda Player
+Comment=Onda Digital Signage Player
+Exec=onda-player
 Terminal=false
 X-GNOME-Autostart-enabled=true
 `;
@@ -173,7 +173,7 @@ function ensureLinuxAutostartEntry(): void {
   try {
     const base = isSnap() ? (process.env.SNAP_USER_DATA as string) : homedir();
     const autostartDir = join(base, '.config', 'autostart');
-    const entryPath = join(autostartDir, 'xibo-player.desktop');
+    const entryPath = join(autostartDir, 'onda-player.desktop');
 
     if (existsSync(entryPath)) return;
 

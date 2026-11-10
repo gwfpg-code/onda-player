@@ -1,0 +1,60 @@
+name: 'Onda Player - build'
+
+# Costruisce gli installer di Onda Player senza firma digitale:
+#   - Linux: .deb (Debian/Ubuntu, mini PC)
+#   - Windows: .msi
+# Parte con un tag "v*" (es. v4.0.13-onda.1) e allega i file alla release; a mano (Actions › Run
+# workflow) li lascia come artefatti scaricabili. Il workflow originale di Xibo (firma Azure, Snap
+# Store) è stato tolto: usa segreti che solo Xibo possiede.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  WIX_VERSION: '6.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-forge make --platform linux --arch x64 --targets @electron-forge/maker-deb
+      - uses: actions/upload-artifact@v4
+        with: { name: onda-player-linux, path: 'out/make/deb/x64/*.deb' }
+      - name: Allegato alla release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: 'out/make/deb/x64/*.deb' }
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: WiX
+        shell: powershell
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          wix extension add -g WixToolset.UI.wixext/$env:WIX_VERSION
+      - run: npm ci
+        shell: powershell
+      - run: npm run build
+        shell: powershell
+      - run: npx electron-forge make --platform win32 --arch x64
+        shell: powershell
+      - uses: actions/upload-artifact@v4
+        with: { name: onda-player-windows, path: 'out/make/**/*.msi' }
+      - name: Allegato alla release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: 'out/make/**/*.msi' }

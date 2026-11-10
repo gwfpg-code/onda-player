@@ -6,7 +6,7 @@
   variables below from the Electron Forge build:
 
     AppDir          Absolute path to the packaged application directory
-                    (out/xibo-player-win32-x64), the output of `electron-forge package`.
+                    (out/onda-player-win32-x64), the output of `electron-forge package`.
     ProductVersion  The MSI's own version, deliberately decoupled from the player's
                     version in package.json.
     ProductName     "Xibo Player"
@@ -37,7 +37,7 @@
     InstallerVersion="500"
     Compressed="yes">
 
-    <SummaryInformation Description="Xibo Digital Signage Player" />
+    <SummaryInformation Description="Onda Digital Signage Player" />
 
     <!--
       Removes any older version carrying the same UpgradeCode before installing
@@ -63,7 +63,7 @@
       already sets it, and defining it twice is a build error.
     -->
     <Property Id="ARPNOREPAIR" Value="1" />
-    <Property Id="ARPURLINFOABOUT" Value="https://xibosignage.com" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/gwfpg-code/onda-player" />
 
     <!--
       Where the product landed, for inventory and deployment tools that read it
@@ -143,8 +143,8 @@
           Id="StartMenuShortcut"
           Directory="ProgramMenuFolder"
           Name="$(var.ProductName)"
-          Description="Xibo Digital Signage Player"
-          Target="[INSTALLFOLDER]xibo-player.exe"
+          Description="Onda Digital Signage Player"
+          Target="[INSTALLFOLDER]onda-player.exe"
           WorkingDirectory="INSTALLFOLDER"
           Advertise="no" />
 
@@ -162,8 +162,8 @@
           Id="StartupShortcut"
           Directory="StartupFolder"
           Name="$(var.ProductName)"
-          Description="Starts the Xibo Player when Windows starts"
-          Target="[INSTALLFOLDER]xibo-player.exe"
+          Description="Starts Onda Player when Windows starts"
+          Target="[INSTALLFOLDER]onda-player.exe"
           WorkingDirectory="INSTALLFOLDER"
           Advertise="no" />
       </Component>

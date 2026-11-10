@@ -30,10 +30,11 @@ const MSI_VERSION_MINOR = 408;
  * value is what makes the new package an upgrade of the old player rather than
  * a second product beside it, and it can never change.
  */
-const UPGRADE_CODE = '443E7578-7FEF-47E8-9078-04DDA8B96F3A';
+// Onda: codice proprio, così l'MSI non sostituisce (né viene sostituito da) un player Xibo installato.
+const UPGRADE_CODE = '6B1C0E52-3F6A-4D7B-9E0B-2B6E5C0A9D41';
 
-const PRODUCT_NAME = 'Xibo Player';
-const MANUFACTURER = 'Xibo Signage Ltd';
+const PRODUCT_NAME = 'Onda Player';
+const MANUFACTURER = 'Onda';
 
 /**
  * Build the MSI version from package.json.

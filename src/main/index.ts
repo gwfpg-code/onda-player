@@ -23,6 +23,7 @@ const { readFileSync } = require('fs');
 import { createHash } from 'crypto';
 import { installExtension, JQUERY_DEBUGGER } from 'electron-devtools-installer';
 import { app, WebContentsView, BrowserWindow, ipcMain, session, screen, powerSaveBlocker } from 'electron';
+import { describeDisplays, targetDisplay } from './onda/onda';
 import { join } from 'path';
 import { optimizer, is, electronApp } from '@electron-toolkit/utils';
 import { Xmr } from '@xibosignage/xibo-communication-framework';
@@ -696,12 +697,16 @@ const configureFileManager = () => {
 type WindowGeometry = { x: number, y: number, width: number, height: number };
 
 // Read directly from config.settings rather than config.getSetting(), which turns a 0 into null.
-const getWindowGeometry = (): WindowGeometry => ({
-  x: Number(config.settings.offsetX) || 0,
-  y: Number(config.settings.offsetY) || 0,
-  width: Number(config.settings.sizeX) || 0,
-  height: Number(config.settings.sizeY) || 0,
-});
+// Onda: posizione relativa al monitor scelto (vedi onda/onda.ts)
+const getWindowGeometry = (): WindowGeometry => {
+  const origin = targetDisplay().bounds;
+  return {
+    x: origin.x + (Number(config.settings.offsetX) || 0),
+    y: origin.y + (Number(config.settings.offsetY) || 0),
+    width: Number(config.settings.sizeX) || 0,
+    height: Number(config.settings.sizeY) || 0,
+  };
+};
 
 /**
  * Applies the display profile's offset/size settings to the window. A missing or zero size means
@@ -712,6 +717,24 @@ const applyWindowGeometry = (win: BrowserWindow) => {
 
   if (geometry.width <= 0 || geometry.height <= 0) {
     console.debug('[MAIN] applyWindowGeometry > No size settings, setting window to fullscreen', geometry);
+    // Onda: a schermo intero sul monitor scelto. Il fullscreen resta sul monitor in cui sta la finestra,
+    // quindi se è altrove la sposto prima.
+    const target = targetDisplay();
+    if (screen.getDisplayMatching(win.getBounds()).id !== target.id) {
+      const moveTo = () => {
+        win.setBounds(target.bounds);
+        win.setFullScreen(true);
+      };
+      if (win.isFullScreen()) {
+        win.once('leave-full-screen', moveTo);
+        win.setFullScreen(false);
+      } else {
+        moveTo();
+      }
+      state.width = target.size.width;
+      state.height = target.size.height;
+      return;
+    }
     win.setFullScreen(true);
     const { width, height } = screen.getDisplayMatching(win.getBounds()).size;
     state.width = width;
@@ -789,8 +812,11 @@ const createWindow = async () => {
   const geometry = getWindowGeometry();
   const isFullScreen = geometry.width <= 0 || geometry.height <= 0;
 
+  const ondaDisplay = targetDisplay();
+  console.log('[ONDA] Monitor disponibili: ' + describeDisplays().join(' | ') + ` - uso ${ondaDisplay.id}`);
   mainWindow = new BrowserWindow({
-    ...(isFullScreen ? { fullscreen: true } : { ...geometry, fullscreen: false }),
+    // Onda: la finestra nasce sul monitor scelto, così anche il fullscreen va lì
+    ...(isFullScreen ? { ...ondaDisplay.bounds, fullscreen: true } : { ...geometry, fullscreen: false }),
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#000',
@@ -1964,6 +1990,16 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+
+  // Onda: monitor collegati o scollegati (es. TV accesa dopo il mini PC): riporta il player su quello scelto
+  const ondaReapply = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      console.log('[ONDA] Monitor cambiati: ' + describeDisplays().join(' | '));
+      applyWindowGeometry(mainWindow);
+    }
+  };
+  screen.on('display-added', ondaReapply);
+  screen.on('display-removed', ondaReapply);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

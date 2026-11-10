@@ -217,7 +217,7 @@ window.onload = function() {
 
     return '<!DOCTYPE html>'
         + '<html>'
-        + '<head><meta charset="utf-8"><title>Xibo Data Connector</title></head>'
+        + '<head><meta charset="utf-8"><title>Data Connector</title></head>'
         + '<body>'
         + '<script type="text/javascript">' + bridge + '</script>'
         + '<script type="text/javascript">'
