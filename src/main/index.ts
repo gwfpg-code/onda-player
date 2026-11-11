@@ -22,9 +22,10 @@ const fs = require('fs/promises');
 const { readFileSync } = require('fs');
 import { createHash } from 'crypto';
 import { installExtension, JQUERY_DEBUGGER } from 'electron-devtools-installer';
-import { app, WebContentsView, BrowserWindow, ipcMain, session, screen, powerSaveBlocker } from 'electron';
+import { app, WebContentsView, BrowserWindow, ipcMain, session, screen } from 'electron';
 import { describeDisplays, targetDisplay } from './onda/onda';
 import { guardWindow, initOnda } from './onda/provision';
+import { keepDisplayAwake } from './onda/power';
 import { join } from 'path';
 import { optimizer, is, electronApp } from '@electron-toolkit/utils';
 import { Xmr } from '@xibosignage/xibo-communication-framework';
@@ -1925,8 +1926,8 @@ const init = async (win: BrowserWindow) => {
 
 app.whenReady().then(() => {
   // Keep the display on. A signage screen gets no input, so the OS would otherwise blank it
-  // or start the screensaver.
-  powerSaveBlocker.start('prevent-display-sleep');
+  // or start the screensaver. Onda: fuori orario il blocco si toglie e il monitor si spegne (onda/provision.ts).
+  keepDisplayAwake(true);
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')

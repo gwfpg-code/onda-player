@@ -68,3 +68,5 @@ parts:
       - libcairo2
       - libgtk-3-0t64
       - libgl1
+      # Onda: `xset dpms force off|on` per spegnere il monitor fuori orario (src/main/onda/power.ts)
+      - x11-xserver-utils
