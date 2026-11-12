@@ -304,15 +304,22 @@ export async function createFileServer(
 
   if (!isListening) {
     listen(server, port);
+    listenIPv6Loopback(server, port);
   }
 }
+
+// Onda: il server ascolta solo sull'interfaccia locale (prima: tutte le interfacce, quindi chiunque
+// in LAN poteva chiamare /trigger e far partire le azioni del player, senza credenziali).
+// Renderer, widget e pacchetti HTML usano http://localhost:9696, che resta raggiungibile.
+const LOOPBACK_V4 = '127.0.0.1';
+const LOOPBACK_V6 = '::1';
 
 // Layouts and media are served from here, so nothing plays without it. If the port is in use,
 // keep trying until it's free instead of failing once.
 function listen(server: ReturnType<typeof express>, port: number) {
-  server.listen(port, () => {
+  server.listen(port, LOOPBACK_V4, () => {
     isListening = true;
-    console.log(`Xibo File Server listening on port ${port}`);
+    console.log(`Xibo File Server listening on ${LOOPBACK_V4}:${port}`);
   }).on('error', (error: NodeJS.ErrnoException) => {
     console.error(`[FileServer] Could not listen on port ${port}, trying again in 10 seconds`, {
       code: error.code,
@@ -320,5 +327,15 @@ function listen(server: ReturnType<typeof express>, port: number) {
     });
 
     setTimeout(() => listen(server, port), 10000);
+  });
+}
+
+// Onda: "localhost" può risolvere prima in ::1. Se il sistema ha IPv6 ascoltiamo anche lì, così
+// il renderer non aspetta il ripiego su 127.0.0.1; se IPv6 manca (EADDRNOTAVAIL) basta IPv4.
+function listenIPv6Loopback(server: ReturnType<typeof express>, port: number) {
+  server.listen(port, LOOPBACK_V6, () => {
+    console.log(`Xibo File Server listening on [${LOOPBACK_V6}]:${port}`);
+  }).on('error', (error: NodeJS.ErrnoException) => {
+    console.warn(`[FileServer] Not listening on [${LOOPBACK_V6}]:${port} (${error.code}): IPv4 only`);
   });
 }

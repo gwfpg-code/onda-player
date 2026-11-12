@@ -1,6 +1,6 @@
 {
   "name": "onda-player",
-  "version": "4.0.13-onda.4",
+  "version": "4.0.13-onda.5",
   "versionCode": 4013,
   "description": "Onda Digital Signage Player (basato su Xibo Player, AGPLv3)",
   "main": "./dist/main/index.js",

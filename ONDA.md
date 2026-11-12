@@ -12,6 +12,7 @@ repository pubblico, o una copia su richiesta, soddisfa l'obbligo. Le note di co
 | Schermata di attesa senza logo Xibo, personalizzabile per cliente | `src/main/onda/onda.ts`, `src/main/express.ts`, `src/renderer/src/renderer.ts` |
 | Scelta del monitor | `src/main/onda/onda.ts`, `src/main/index.ts` |
 | Orari di accensione: spegnimento del monitor fuori orario | `src/main/onda/hours.ts`, `src/main/onda/power.ts`, `src/main/onda/provision.ts`, `snap/snapcraft.yaml` |
+| Server locale (porta 9696) solo su `127.0.0.1` e `::1`, non raggiungibile dalla LAN | `src/main/express.ts` |
 | Installer: MSI "Onda Player" con UpgradeCode proprio, .deb, snap `onda-player` | `installer/windows/`, `forge.config.cjs`, `snap/` |
 | Build su GitHub senza firma | `.github/workflows/onda-build.yml` (tolti i workflow di Xibo) |
 
@@ -67,6 +68,16 @@ Onda pubblica uno schermo nero, che resta come rete di sicurezza.
 
 **Da provare su ogni modello di monitor:** alcuni vanno in standby e si riaccendono quando torna il segnale, molti
 televisori invece mostrano "nessun segnale" e poi si spengono del tutto, senza riaccendersi da soli.
+
+## Server locale (porta 9696)
+
+Il player serve layout, contenuti e pacchetti HTML al proprio renderer su `http://localhost:9696`. Nel player Xibo
+originale il server ascolta su tutte le interfacce: chiunque nella rete della sede poteva chiamare `POST /trigger` e
+far partire le azioni interattive, senza credenziali. Onda Player ascolta solo su `127.0.0.1` e, se il sistema ha
+IPv6, su `::1`: dalla LAN la porta risulta chiusa.
+
+Conseguenza: il "webhook del player" di Xibo non si può chiamare da un altro dispositivo. Gli eventi dalla rete della
+sede arriveranno con la funzione Eventi e reazioni di Onda, su un endpoint separato con token e indirizzi ammessi.
 
 ## Scelta del monitor
 
