@@ -77,6 +77,9 @@ module.exports = {
       foreignPrebuilds(),
     ],
     icon: ICON_PATHS[targetPlatform()],
+    // Onda: aggiornatori automatici (resources/updater/), avviati come amministratore dall'attività pianificata
+    // (Windows) o dall'unità systemd (Linux) che crea l'installer scaricato da Onda
+    extraResource: ['installer/updater'],
   },
   rebuildConfig: {},
   makers: [

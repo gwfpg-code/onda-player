@@ -24,6 +24,7 @@ import { hostname } from 'os';
 import { join } from 'path';
 import { dataDir, orderedDisplays } from './onda';
 import { isOn, normalize } from './hours';
+import { handleOffer, hasUpdater, updateReport } from './updater';
 import { keepDisplayAwake, monitorOff, monitorOn, supported, PowerResult } from './power';
 
 export type PlayerOpts = { autostart: boolean; window: 'fullscreen' | 'window'; on_top: boolean; reboot_pc: boolean;
@@ -205,7 +206,8 @@ export async function hello(): Promise<any> {
       body: JSON.stringify({
         hardware_key: hardwareKey, secret: secret(), platform: process.platform,
         version: app.getVersion().includes('onda') ? app.getVersion() : `${app.getVersion()}-onda`, hostname: hostname(), displays,
-        capabilities: supported() ? ['monitor_power'] : [], monitor: lastPower,
+        capabilities: [...(supported() ? ['monitor_power'] : []), ...(hasUpdater() ? ['auto_update'] : [])], monitor: lastPower,
+        update: updateReport(),
         player_opts: readSettings().player_opts?.updated_at ? playerOpts() : undefined, startup: startupInfo(),
       }),
       signal: AbortSignal.timeout(15000),
@@ -231,6 +233,10 @@ export async function hello(): Promise<any> {
       }
       if (`${before.display || ''}` !== `${c.display || ''}` && onDisplayChange) {
         onDisplayChange();
+      }
+      if (c.update) {
+        // in sottofondo: il download può durare minuti
+        void handleOffer(base, { 'X-Onda-Hardware-Key': hardwareKey, 'X-Onda-Secret': secret() }, c.update);
       }
     }
     return lastStatus;

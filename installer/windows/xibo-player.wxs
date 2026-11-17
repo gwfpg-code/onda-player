@@ -106,6 +106,20 @@
       (oppure: msiexec /i onda-player.msi ONDA_URL=http://...); il player lo legge dal registro al primo avvio.
     -->
     <Property Id="ONDA_URL" Secure="yes" />
+    <!--
+      Onda: chiave pubblica (XML di .NET) con cui l'aggiornatore verifica gli aggiornamenti firmati da Onda; anche
+      questa la scrive Onda nell'installer. Con la chiave l'installer crea l'attività pianificata "Onda Player\Aggiornamento"
+      (SYSTEM, ogni 2 minuti: resources\updater\onda-update.ps1), tolta quando il player si disinstalla.
+    -->
+    <Property Id="ONDA_UPDATE_KEY" Secure="yes" Hidden="yes" />
+    <CustomAction Id="OndaCreateUpdateTask" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+      ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Create /F /RU SYSTEM /RL HIGHEST /SC MINUTE /MO 2 /TN &quot;Onda Player\Aggiornamento&quot; /TR &quot;powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \&quot;[INSTALLFOLDER]resources\updater\onda-update.ps1\&quot;&quot;" />
+    <CustomAction Id="OndaDeleteUpdateTask" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+      ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Delete /F /TN &quot;Onda Player\Aggiornamento&quot;" />
+    <InstallExecuteSequence>
+      <Custom Action="OndaCreateUpdateTask" After="InstallFiles" Condition="ONDA_UPDATE_KEY AND NOT (REMOVE=&quot;ALL&quot;)" />
+      <Custom Action="OndaDeleteUpdateTask" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
 
     <Feature Id="Main" Title="$(var.ProductName)" Level="1">
       <ComponentGroupRef Id="ApplicationFiles" />
@@ -127,6 +141,15 @@
 
   <Fragment>
     <ComponentGroup Id="OndaSettings" Directory="INSTALLFOLDER">
+      <Component Id="OndaUpdateKey" Guid="9E4D2B71-0C3A-4F68-B5E1-7A2C9D0F4B18" Condition="ONDA_UPDATE_KEY">
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\$(var.Manufacturer)\$(var.ProductName)"
+          Name="UpdateKey"
+          Type="string"
+          Value="[ONDA_UPDATE_KEY]"
+          KeyPath="yes" />
+      </Component>
       <Component Id="OndaUrl" Guid="3C7E2A90-6B1D-4E5F-8A2C-9D4B1E7F0A63" Condition="ONDA_URL">
         <RegistryValue
           Root="HKLM"

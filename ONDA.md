@@ -99,6 +99,32 @@ Authorization: Bearer <token della fonte>
   `netsh advfirewall firewall add rule name="Onda Player - webhook locale" dir=in action=allow protocol=TCP localport=9697 profile=private,domain`
   (con un'altra porta cambia `localport`). Su Linux serve solo se il firewall è attivo (`ufw allow 9697/tcp`).
 
+## Aggiornamento automatico
+
+Dalla versione 4.0.13-onda.14, il player installato con un installer scaricato da Onda si aggiorna da solo. Le regole
+su quando farlo stanno in Onda: Console › Impostazioni › Onda Player, poi per cliente e per schermo. Il player non ha i
+permessi per installare, quindi il lavoro si divide così:
+
+1. Nell'`hello` il player dice di avere l'aggiornatore (capacità `auto_update`, presente se c'è la chiave pubblica di
+   Onda). Quando è il momento, Onda risponde con `config.update`: versione, impronta, manifesto e firma RSA SHA-256.
+2. Il player scarica il pacchetto da `GET /api/player/update/file` (identità negli header), ne controlla l'impronta e
+   lo lascia nella cartella di attesa con `manifest.sig`. Per ultimo scrive `manifest.json`
+   (`src/main/onda/updater.ts`).
+3. L'aggiornatore gira come amministratore (`installer/updater/`, copiato in `resources/updater/`). Copia i file in
+   una sua cartella e verifica firma, scadenza e impronta. Poi installa e scrive `status.json`, che il player
+   riferisce a Onda.
+   - **Windows:** attività pianificata `Onda Player\Aggiornamento`, eseguita come SYSTEM ogni 2 minuti
+     (`onda-update.ps1`). La cartella di attesa è `%ProgramData%\Onda Player\update` e la chiave sta in
+     `HKLM\SOFTWARE\Onda\Onda Player` › `UpdateKey`. Chiude il player, esegue `msiexec /qn` e lo riavvia nella
+     sessione dell'utente collegato. Registro: `C:\Windows\Temp` (o `SystemTemp`) › `onda-player-update.log`.
+   - **Linux:** unità systemd `onda-player-update.path` e `.service` di root (`onda-update.sh`). La cartella di
+     attesa è `/var/lib/onda-player/update` e la chiave sta in `/etc/onda-player/update.pem`. Installa con
+     `apt-get install` e il player si riavvia da solo. Registro: `/var/log/onda-player-update.log`.
+
+La cartella di attesa è scrivibile da tutti, quindi conta solo la firma: senza la chiave di Onda non si installa
+nulla. Attività, unità e chiave le crea solo l'installer personalizzato da Onda (proprietà MSI `ONDA_UPDATE_KEY`,
+`postinst` del .deb); un installer preso da GitHub non ha l'aggiornatore.
+
 ## Avvio, finestra e blocchi
 
 Si cambiano sul player (muovi il mouse › barra in alto › **Impostazioni**, con il PIN se impostato) oppure nella
