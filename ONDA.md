@@ -13,7 +13,7 @@ repository pubblico, o una copia su richiesta, soddisfa l'obbligo. Le note di co
 | Scelta del monitor | `src/main/onda/onda.ts`, `src/main/index.ts` |
 | Orari di accensione: spegnimento del monitor fuori orario | `src/main/onda/hours.ts`, `src/main/onda/power.ts`, `src/main/onda/provision.ts`, `snap/snapcraft.yaml` |
 | Server locale (porta 9696) solo su `127.0.0.1` e `::1`, non raggiungibile dalla LAN | `src/main/express.ts` |
-| Eventi e reazioni: collegamento con Onda (WebSocket) ed esecutore delle reazioni | `src/main/onda/events.ts`, `src/main/onda/onda-reactions.js` |
+| Eventi e reazioni: collegamento con Onda (WebSocket), esecutore delle reazioni, webhook locale | `src/main/onda/events.ts`, `src/main/onda/onda-reactions.js`, `src/main/onda/localwebhook.ts` |
 | Installer: MSI "Onda Player" con UpgradeCode proprio, .deb, snap `onda-player` | `installer/windows/`, `forge.config.cjs`, `snap/` |
 | Build su GitHub senza firma | `.github/workflows/onda-build.yml` (tolti i workflow di Xibo) |
 
@@ -56,7 +56,33 @@ Si presenta con chiave hardware e segreto, come per il provisioning, riceve il p
   è ancora in corso il player attiva `onda-stop`: un contenuto vuoto di 1 secondo nel cassetto prende il suo posto e
   torna il loop. "Ricomincia" fa prima lo stop e poi riparte dal primo contenuto (il renderer ignora un contenuto del
   cassetto già in coda). Serve il layout pubblicato da Onda 0.18.0 o successiva.
-- **Limiti:** il contenuto obbligatorio della Direzione non è ancora riconosciuto; il webhook locale in LAN non c'è ancora.
+- **Senza rete:** l'ultimo pacchetto regole resta in `onda/rules.json` e vale anche se all'avvio Onda non risponde;
+  esiti e reazioni restano in coda (fino a 500) e partono quando il collegamento torna.
+- **Limiti:** il contenuto obbligatorio della Direzione non è ancora riconosciuto.
+
+### Webhook locale (rete della sede)
+
+Per sensori, pulsanti e regia in sede, che devono reagire subito anche senza Internet. **Spento di default**: si accende
+nella scheda dello schermo in Onda (Onda Player › Webhook locale nella rete della sede, porta predefinita **9697**) e
+il player lo riceve entro 30 secondi con il pacchetto regole (`local_webhook`).
+
+```
+POST http://<indirizzo del player>:9697/api/events/v1/<id della fonte>
+Authorization: Bearer <token della fonte>
+{"id": "evt-0001", "type": "button.pressed", "data": {"pulsante": 1}}
+```
+
+- Stesso corpo e stesso token del webhook di Onda; risposte: 202 accettato (con l'esito della reazione), 200 doppione,
+  400 dati non validi, 401 fonte o token sbagliati, 403 fonte revocata / indirizzo non ammesso / tipo non ammesso /
+  altro schermo, 413 oltre 4 KB, 429 troppe richieste.
+- Accetta solo gli **indirizzi ammessi** dalla fonte (Onda › Eventi › Fonti: IP o reti come `192.168.1.0/24`); lista
+  vuota = nessuno. Le fonti con **firma HMAC** non sono accettate: il player conosce solo l'impronta del token.
+- La reazione parte subito con le regole in memoria; poi il player la riferisce a Onda (`local_event`): nel registro
+  l'evento risulta "rete locale", con l'esecutore "Onda Player"; le regole "solo uscita" le esegue Onda.
+- Il server interno della porta 9696 (`/trigger`) resta solo su localhost.
+- **Windows:** il firewall blocca le connessioni in entrata. Una volta, da un prompt come amministratore:
+  `netsh advfirewall firewall add rule name="Onda Player - webhook locale" dir=in action=allow protocol=TCP localport=9697 profile=private,domain`
+  (con un'altra porta cambia `localport`). Su Linux serve solo se il firewall è attivo (`ufw allow 9697/tcp`).
 
 ## PIN
 

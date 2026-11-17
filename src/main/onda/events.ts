@@ -18,12 +18,18 @@
  * Limite: il contenuto obbligatorio della Direzione non è ancora riconosciuto.
  */
 import { app } from 'electron';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import reactionsSource from './onda-reactions.js?raw';
+import { applyLocalWebhook } from './localwebhook';
+import { dataDir } from './onda';
 import { deviceIdentity, managedByOnda, ondaUrl } from './provision';
 
 type Trigger = (code: string) => Promise<void>;
 type Item = { media: string; kind: string; name: string; duration: number; trigger?: string };
 type View = { rule_id: string; name: string; kind: string; items: Item[]; started: number; ends_at: number };
+/** Riferimento all'evento nei messaggi a Onda: {event_id} (dal webhook di Onda) o {local_source, local_id} (locale). */
+type Ref = Record<string, any>;
 
 const TICK_MS = 250;
 const PING_MS = 30 * 1000;
@@ -32,6 +38,7 @@ const RETRY_MIN_MS = 2 * 1000;
 const RETRY_MAX_MS = 60 * 1000;
 const STOP_CODE = 'onda-stop';             // REACTION_STOP_CODE di Onda (backend/app/engine/base.py)
 const STOP_GAP_MS = 300;                   // tra lo stop e il primo contenuto quando una reazione ricomincia
+const QUEUE_MAX = 500;                     // messaggi per Onda tenuti mentre il collegamento è perso
 
 let OndaReactions: any = null;
 let fire: Trigger | null = null;
@@ -42,7 +49,10 @@ let tickTimer: NodeJS.Timeout | null = null;
 let lastMessageAt = 0;
 let pkg: any = null;
 let executor: any = null;
-type Playing = { ruleId: string; eventId: number | null; timer: NodeJS.Timeout | null; itemEndsAt: number };
+type Playing = { ruleId: string; ref: Ref; timer: NodeJS.Timeout | null; itemEndsAt: number };
+let welcomed = false;
+const outbox: any[] = [];
+let hold: any[] | null = null;              // messaggi trattenuti finché l'evento locale non è annunciato
 let playing: Playing | null = null;
 let status: { connected: boolean; screen?: string; rules?: number; version?: string; error?: string } = { connected: false };
 
@@ -57,11 +67,29 @@ function reactions(): any {
   return OndaReactions;
 }
 
+/** Messaggio per Onda; senza collegamento resta in coda (gli eventi locali si eseguono comunque). */
 function send(msg: any) {
-  if (ws && ws.readyState === 1) {
+  if (hold) {
+    hold.push(msg);
+    return;
+  }
+  if (ws && ws.readyState === 1 && welcomed) {
     ws.send(JSON.stringify(msg));
+  } else if (msg.type !== 'ping') {
+    outbox.push(msg);
+    if (outbox.length > QUEUE_MAX) {
+      outbox.shift();
+    }
   }
 }
+
+function flush() {
+  while (outbox.length && ws && ws.readyState === 1) {
+    ws.send(JSON.stringify(outbox.shift()));
+  }
+}
+
+const rulesFile = () => join(dataDir(), 'onda', 'rules.json');
 
 function wsUrl(base: string): string {
   return base.replace(/^http/i, 'ws') + '/api/player/ws';
@@ -82,13 +110,13 @@ function stopPlayback(cutContent = false) {
   playing = null;
 }
 
-function play(view: View, eventId: number | null, delayMs = 0) {
+function play(view: View, ref: Ref, delayMs = 0) {
   stopPlayback();
   const items = (view.items || []).filter((it) => it.trigger);
   if (!items.length || !fire) {
     return;
   }
-  const state: Playing = { ruleId: view.rule_id, eventId, timer: null, itemEndsAt: 0 };
+  const state: Playing = { ruleId: view.rule_id, ref, timer: null, itemEndsAt: 0 };
   playing = state;
   let i = 0;
   const next = () => {
@@ -122,27 +150,28 @@ function ruleKind(ruleId: string | null): string {
   return r?.reaction?.kind || '';
 }
 
-function startReaction(view: View, eventId: number | null) {
-  play(view, eventId);
-  send({ type: 'reaction', phase: 'started', rule_id: view.rule_id, event_id: eventId });
+function startReaction(view: View, ref: Ref) {
+  play(view, ref);
+  send({ type: 'reaction', phase: 'started', rule_id: view.rule_id, ...ref });
 }
 
 function endReaction(ruleId: string, cutContent = true) {
-  const eventId = playing && playing.ruleId === ruleId ? playing.eventId : null;
+  const ref = playing && playing.ruleId === ruleId ? playing.ref : {};
   stopPlayback(cutContent);
-  send({ type: 'reaction', phase: 'ended', rule_id: ruleId, event_id: eventId });
+  send({ type: 'reaction', phase: 'ended', rule_id: ruleId, ...ref });
 }
 
-function onEvent(eventId: number, event: any) {
+/** Decide ed esegue; ritorna la decisione di onda-reactions.js (null se la regola è "solo uscita"). */
+export function execute(event: any, ref: Ref): any {
   if (!executor) {
-    send({ type: 'outcome', event_id: eventId, result: 'discarded', detail: 'Pacchetto regole non ancora ricevuto' });
-    return;
+    return { result: 'discarded', rule_id: null, detail: 'Pacchetto regole non ancora ricevuto' };
   }
   const t0 = Date.now();
   const before = executor.current();
   const d = executor.handle(event, t0, { mandatory: false });
+  d.latency_ms = Date.now() - t0;
   if (d.rule_id && ruleKind(d.rule_id) === 'output') {
-    return;                                // "solo uscita": la esegue Onda, non lo schermo
+    return null;                           // "solo uscita": la esegue Onda, non lo schermo
   }
   if (d.closed) {
     endReaction(d.closed, !d.start);          // se ne parte un'altra, il suo contenuto prende il posto di quello in corso
@@ -150,16 +179,44 @@ function onEvent(eventId: number, event: any) {
   if (d.start) {
     const same = before && before.rule_id === d.start.rule_id && !d.closed;
     if (!same) {
-      startReaction(d.start, eventId);
+      startReaction(d.start, ref);
     } else if (d.detail === 'Reazione ricominciata') {
       // XLR ignora un contenuto del cassetto già in coda: prima lo stop, poi di nuovo il primo contenuto
-      const restartId = playing?.eventId ?? eventId;
+      const keep = playing?.ref ?? ref;
       stopPlayback(true);
-      play(d.start, restartId, STOP_GAP_MS);
+      play(d.start, keep, STOP_GAP_MS);
     }                                      // prolungata: la sequenza continua fino alla nuova fine
   }
-  send({ type: 'outcome', event_id: eventId, rule_id: d.rule_id, result: d.result, detail: d.detail,
-    latency_ms: Date.now() - t0 });
+  return d;
+}
+
+function onEvent(eventId: number, event: any) {
+  const d = execute(event, { event_id: eventId });
+  if (d) {
+    send({ type: 'outcome', event_id: eventId, rule_id: d.rule_id, result: d.result, detail: d.detail,
+      latency_ms: d.latency_ms });
+  }
+}
+
+/** Evento dal webhook locale, già controllato: esegue subito e lo riferisce a Onda (anche più tardi). */
+export function executeLocal(sourceId: string, ip: string, event: any): any {
+  hold = [];
+  let d: any;
+  try {
+    d = execute({ type: event.type, source: sourceId, data: event.data || {} },
+      { local_source: sourceId, local_id: event.id });
+  } finally {
+    const held = hold;
+    hold = null;
+    const outcome = d ? { rule_id: d.rule_id, result: d.result, detail: d.detail, latency_ms: d.latency_ms } : {};
+    send({ type: 'local_event', source: sourceId, ip, event, outcome });   // prima l'evento, poi le sue reaction
+    held.forEach(send);
+  }
+  return d || { result: 'executed', detail: 'Solo uscita: la esegue Onda' };
+}
+
+export function currentPackage(): any {
+  return pkg;
 }
 
 function tick() {
@@ -170,7 +227,7 @@ function tick() {
   if (r?.ended) {
     endReaction(r.ended);
   } else if (r?.start) {
-    startReaction(r.start, null);
+    startReaction(r.start, {});
   }
 }
 
@@ -186,6 +243,13 @@ function onRules(next: any) {
     }
     pkg = next;
     executor = ex;
+    applyLocalWebhook(next.local_webhook);
+    try {
+      mkdirSync(join(dataDir(), 'onda'), { recursive: true });
+      writeFileSync(rulesFile(), JSON.stringify(next));      // per il webhook locale anche senza rete all'avvio
+    } catch (e) {
+      console.warn('[ONDA] Eventi: pacchetto regole non salvato', e);
+    }
     status = { ...status, rules: (next.rules || []).length, version: next.version };
     console.log(`[ONDA] Eventi: pacchetto regole ${next.version} (${(next.rules || []).length} regole)`);
   } catch (e: any) {
@@ -237,6 +301,8 @@ function connect() {
     }
     if (msg.type === 'welcome') {
       retryMs = RETRY_MIN_MS;
+      welcomed = true;
+      flush();
       status = { ...status, connected: true, screen: msg.screen?.name, error: undefined };
       console.log(`[ONDA] Eventi: collegato a Onda come "${msg.screen?.name}"`);
     } else if (msg.type === 'rules') {
@@ -248,6 +314,7 @@ function connect() {
   sock.onclose = (e: any) => {
     if (ws === sock) {
       ws = null;
+      welcomed = false;
     }
     status = { ...status, connected: false, error: e?.reason || undefined };
     if (e?.code === 4401 || e?.code === 4403) {
@@ -264,6 +331,14 @@ export function initEvents(trigger: Trigger) {
   fire = trigger;
   if (tickTimer) {
     return;
+  }
+  // ultimo pacchetto ricevuto: regole e webhook locale valgono anche se all'avvio Onda non è raggiungibile
+  try {
+    if (managedByOnda() && existsSync(rulesFile())) {
+      onRules(JSON.parse(readFileSync(rulesFile(), 'utf-8')));
+    }
+  } catch (e) {
+    console.warn('[ONDA] Eventi: pacchetto regole salvato non leggibile', e);
   }
   tickTimer = setInterval(tick, TICK_MS);
   setInterval(() => {
