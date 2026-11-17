@@ -68,6 +68,11 @@ function secret(): string {
   return s;
 }
 
+/** Identità del dispositivo verso Onda (chiave hardware + segreto), usata anche dal collegamento eventi. */
+export function deviceIdentity(): { hardwareKey: string; secret: string } {
+  return { hardwareKey, secret: secret() };
+}
+
 export function ondaUrl(): string {
   return (process.env.ONDA_URL || readSettings().onda_url || '').replace(/\/+$/, '');
 }

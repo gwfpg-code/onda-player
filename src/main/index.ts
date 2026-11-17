@@ -25,6 +25,7 @@ import { installExtension, JQUERY_DEBUGGER } from 'electron-devtools-installer';
 import { app, WebContentsView, BrowserWindow, ipcMain, session, screen } from 'electron';
 import { describeDisplays, targetDisplay } from './onda/onda';
 import { guardWindow, initOnda } from './onda/provision';
+import { initEvents } from './onda/events';
 import { keepDisplayAwake } from './onda/power';
 import { join } from 'path';
 import { optimizer, is, electronApp } from '@electron-toolkit/utils';
@@ -1996,6 +1997,8 @@ app.whenReady().then(() => {
     initOnda({ hardwareKey: `${config.hardwareKey}`, configured: config.isConfigured(),
       reapplyDisplay: () => mainWindow && !mainWindow.isDestroyed() && applyWindowGeometry(mainWindow) });
     guardWindow(mainWindow);
+    // Onda: eventi e reazioni (WebSocket verso Onda, codici trigger del layout del loop)
+    initEvents((code) => handleTrigger(code));
   });
 
   // Onda: monitor collegati o scollegati (es. TV accesa dopo il mini PC): riporta il player su quello scelto

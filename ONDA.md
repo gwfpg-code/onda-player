@@ -13,6 +13,7 @@ repository pubblico, o una copia su richiesta, soddisfa l'obbligo. Le note di co
 | Scelta del monitor | `src/main/onda/onda.ts`, `src/main/index.ts` |
 | Orari di accensione: spegnimento del monitor fuori orario | `src/main/onda/hours.ts`, `src/main/onda/power.ts`, `src/main/onda/provision.ts`, `snap/snapcraft.yaml` |
 | Server locale (porta 9696) solo su `127.0.0.1` e `::1`, non raggiungibile dalla LAN | `src/main/express.ts` |
+| Eventi e reazioni: collegamento con Onda (WebSocket) ed esecutore delle reazioni | `src/main/onda/events.ts`, `src/main/onda/onda-reactions.js` |
 | Installer: MSI "Onda Player" con UpgradeCode proprio, .deb, snap `onda-player` | `installer/windows/`, `forge.config.cjs`, `snap/` |
 | Build su GitHub senza firma | `.github/workflows/onda-build.yml` (tolti i workflow di Xibo) |
 
@@ -31,6 +32,27 @@ Il player riceve indirizzo e chiave del motore, si registra e Onda lo abbina e l
 - **Configurazione manuale** (indirizzo e chiave del CMS, come in Xibo): pulsante in basso nella schermata del codice.
 - Codice: `src/main/onda/provision.ts`, `src/renderer/src/onda/OndaScreen.ts`. API di Onda: `POST /api/player/hello`,
   `GET /api/player/splash`.
+
+## Eventi e reazioni
+
+Con la funzione Eventi attiva per il cliente, il player apre una WebSocket verso Onda (`<onda>/api/player/ws`,
+protocollo `onda-ws-1`, descritto in `backend/app/events/devices.py` di Onda): nessuna porta aperta sul dispositivo.
+Si presenta con chiave hardware e segreto, come per il provisioning, riceve il pacchetto regole del suo schermo
+(`onda-rules-1`, aggiornato entro 30 secondi da ogni modifica) e gli eventi che lo riguardano.
+
+- **Decisione:** `src/main/onda/onda-reactions.js`, copia **identica** di `backend/app/static/js/onda-reactions.js` di
+  Onda (lo stesso codice dell'anteprima del pannello). Quando cambia in Onda va ricopiato qui.
+- **Tutto schermo:** il layout del loop pubblicato da Onda contiene una zona trasparente sopra il loop, il cassetto
+  con i contenuti delle reazioni e un'azione per contenuto con un codice trigger (`onda-r<regola>-<n>`). Il player
+  attiva i codici in sequenza, come `POST /trigger` ma dall'interno: il contenuto compare a tutto schermo e il loop
+  riprende da dove era.
+- **Registro:** il player riferisce l'esito (eseguito, pausa, ignorato, scartato) e l'inizio e la fine della reazione:
+  in Onda › Eventi › Registro l'esecutore risulta "Onda Player", e Onda manda `reaction.started` / `reaction.ended`
+  alle destinazioni.
+- **Collegamento:** ping ogni 30 secondi, nuovo tentativo con attese crescenti (da 2 a 60 secondi). Registro del
+  player: righe `[ONDA] Eventi: …`.
+- **Limiti:** un contenuto già partito arriva alla sua fine (una durata fissa più corta, o "Annulla", non lo
+  tagliano); il contenuto obbligatorio della Direzione non è ancora riconosciuto; il webhook locale in LAN non c'è ancora.
 
 ## PIN
 
