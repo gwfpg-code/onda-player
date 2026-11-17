@@ -30,7 +30,7 @@ import { ConfigHandler } from './ConfigHandler';
 import { ConfigData, SspAdData } from '@shared/types';
 import { htmlPackageDirName } from '@shared/htmlPackage';
 import logo from './assets/images/logo.png';
-import { askPin, runOndaScreen } from './onda/OndaScreen';
+import { askPin, openSettings, runOndaScreen } from './onda/OndaScreen';
 import { DataConnectorManager } from './dataConnector/dataConnectorManager';
 
 // Base URL the local file server serves cached files from. Shared by XLR (for
@@ -739,6 +739,13 @@ const initNavBar = () => {
   });
 
   $('#nav-identify').off('click').on('click', () => (window as any).ondaAPI?.identify());
+
+  $('#nav-settings').off('click').on('click', async () => {
+    const pin = await askPin('PIN per le impostazioni del player');
+    if (pin !== null) {
+      await openSettings(pin);
+    }
+  });
 
   $('#nav-quit').off('click').on('click', async () => {
     const pin = await askPin('PIN per chiudere il player');

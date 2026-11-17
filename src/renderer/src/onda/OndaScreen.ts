@@ -151,3 +151,50 @@ export function runOndaScreen(): Promise<{ cmsUrl: string; cmsKey: string; displ
     tick();
   });
 }
+
+
+/** Impostazioni di Onda Player (barra in alto › Impostazioni, dopo il PIN): valgono subito e vanno anche a Onda. */
+export async function openSettings(pin: string): Promise<void> {
+  if (!onda()?.getOpts) {
+    return;
+  }
+  ensureCss();
+  const o = await onda().getOpts();
+  const st = o.startup || {};
+  const box = document.createElement('div');
+  box.className = 'onda-pin';
+  const chk = (name: string, label: string) =>
+    `<label style="display:flex;gap:10px;align-items:center;text-align:left"><input type="checkbox" name="${name}" ${o[name] ? 'checked' : ''}
+      style="min-width:0;width:20px;height:20px">${esc(label)}</label>`;
+  box.innerHTML = `<form style="justify-items:stretch;max-width:560px"><b style="font-size:20px;text-align:center">Impostazioni del player</b>
+    ${chk('autostart', "Avvio automatico all'accesso al computer")}
+    <span style="color:#9A97A3;font-size:14px;margin-top:-8px">Adesso: ${st.registered ? 'registrato nel sistema' : 'non registrato nel sistema'}</span>
+    <label style="display:grid;gap:6px;text-align:left">Finestra
+      <select name="window" style="background:#17161B;color:#F5F4F1;border:1px solid #4A4852;border-radius:8px;padding:10px;font-size:16px">
+        <option value="fullscreen" ${o.window !== 'window' ? 'selected' : ''}>Schermo intero</option>
+        <option value="window" ${o.window === 'window' ? 'selected' : ''}>Finestra ridimensionabile (per le prove)</option></select></label>
+    ${chk('on_top', 'Sempre in primo piano (a schermo intero)')}
+    ${chk('reboot_pc', 'Se il player si blocca e i riavvii non bastano, riavvia il computer (al massimo una volta all\'ora)')}
+    <span style="color:#9A97A3;font-size:14px">Valgono subito e vanno anche a Onda (scheda dello schermo): vale l'ultima modifica.</span>
+    <span class="os-err" style="color:#F0A090;min-height:1.2em"></span>
+    <div style="display:flex;gap:10px;justify-content:center"><button type="button" data-x>Annulla</button><button type="submit">Salva</button></div></form>`;
+  document.body.appendChild(box);
+  return new Promise((resolve) => {
+    const form = box.querySelector('form') as HTMLFormElement;
+    const close = () => { box.remove(); resolve(); };
+    (box.querySelector('[data-x]') as HTMLElement).onclick = close;
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const val = (n: string) => (form.elements.namedItem(n) as HTMLInputElement);
+      const r = await onda().setOpts(pin, {
+        autostart: val('autostart').checked, window: (form.elements.namedItem('window') as HTMLSelectElement).value,
+        on_top: val('on_top').checked, reboot_pc: val('reboot_pc').checked,
+      });
+      if (r?.ok) {
+        close();
+      } else {
+        (box.querySelector('.os-err') as HTMLElement).textContent = r?.error || 'Non salvato';
+      }
+    };
+  });
+}

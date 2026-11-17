@@ -11,6 +11,7 @@ repository pubblico, o una copia su richiesta, soddisfa l'obbligo. Le note di co
 | Nome, icone, titolo della finestra, schermata di configurazione | `package.json`, `resources/`, `src/renderer/index.html` |
 | Schermata di attesa senza logo Xibo, personalizzabile per cliente | `src/main/onda/onda.ts`, `src/main/express.ts`, `src/renderer/src/renderer.ts` |
 | Scelta del monitor | `src/main/onda/onda.ts`, `src/main/index.ts` |
+| Avvio automatico, finestra, primo piano, riavvio del computer se si blocca | `src/main/onda/provision.ts`, `src/main/common/watchdog.ts`, `src/main/index.ts`, `src/renderer/src/onda/OndaScreen.ts` |
 | Orari di accensione: spegnimento del monitor fuori orario | `src/main/onda/hours.ts`, `src/main/onda/power.ts`, `src/main/onda/provision.ts`, `snap/snapcraft.yaml` |
 | Server locale (porta 9696) solo su `127.0.0.1` e `::1`, non raggiungibile dalla LAN | `src/main/express.ts` |
 | Eventi e reazioni: collegamento con Onda (WebSocket), esecutore delle reazioni, webhook locale | `src/main/onda/events.ts`, `src/main/onda/onda-reactions.js`, `src/main/onda/localwebhook.ts` |
@@ -91,6 +92,25 @@ Authorization: Bearer <token della fonte>
 - **Windows:** il firewall blocca le connessioni in entrata. Una volta, da un prompt come amministratore:
   `netsh advfirewall firewall add rule name="Onda Player - webhook locale" dir=in action=allow protocol=TCP localport=9697 profile=private,domain`
   (con un'altra porta cambia `localport`). Su Linux serve solo se il firewall è attivo (`ufw allow 9697/tcp`).
+
+## Avvio, finestra e blocchi
+
+Si cambiano sul player (muovi il mouse › barra in alto › **Impostazioni**, con il PIN se impostato) oppure nella
+scheda dello schermo in Onda (Onda Player › Avvio e finestra). Valgono subito; vince la modifica più recente
+(`player_opts.updated_at` in `onda.json` e in Onda).
+
+| Impostazione | Predefinita | Cosa fa |
+|---|---|---|
+| Avvio automatico | sì | Windows: voce "Run" dell'utente (`setLoginItemSettings`); Linux: `~/.config/autostart/onda-player.desktop`. Il player dice a Onda se è davvero registrato (su Windows anche se è stato disattivato in Gestione attività › App di avvio) |
+| Finestra | schermo intero | "Finestra ridimensionabile" per le prove: 60% del monitor, si sposta trascinando la barra in alto |
+| Sempre in primo piano | sì | A schermo intero le altre app non coprono il player (livello `screen-saver`); in finestra è spento |
+| Riavvio del computer | sì | Vedi sotto |
+
+**Se il player si blocca** (renderer in crash o fermo per 30 secondi): si riavvia da solo. Se non parte a suonare
+entro 60 secondi ricarica la pagina, e dopo 3 tentativi si riavvia. Oltre 5 riavvii in 10 minuti riavvia il computer
+(`shutdown /r /t 30` su Windows, `systemctl reboot` su Linux), al massimo una volta all'ora; con l'impostazione spenta,
+o nell'ora successiva a un riavvio, aspetta e riprova. Riavvii recenti e ultimo riavvio del computer compaiono nella
+scheda dello schermo in Onda.
 
 ## PIN
 

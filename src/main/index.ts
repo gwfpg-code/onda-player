@@ -24,7 +24,7 @@ import { createHash } from 'crypto';
 import { installExtension, JQUERY_DEBUGGER } from 'electron-devtools-installer';
 import { app, WebContentsView, BrowserWindow, ipcMain, session, screen } from 'electron';
 import { describeDisplays, targetDisplay } from './onda/onda';
-import { guardWindow, initOnda } from './onda/provision';
+import { guardWindow, initOnda, playerOpts } from './onda/provision';
 import { initEvents } from './onda/events';
 import { keepDisplayAwake } from './onda/power';
 import { join } from 'path';
@@ -71,7 +71,10 @@ import Schedule from './xmds/response/schedule/schedule';
 import ScheduleManager from './common/scheduleManager';
 import { migrateLegacyPlayer } from './migration/legacyPlayer';
 import { applyProxyConfig } from './common/proxy';
-import { ensureAutostartEntry, installCrashRecovery } from './common/watchdog';
+import {
+  autostartRegistered, ensureAutostartEntry, installCrashRecovery, lastReboot, recentRestarts, relaunchPlayer,
+  setRebootPolicy,
+} from './common/watchdog';
 import { InputLayoutType, LocalFile, RequiredFile } from './common/types';
 import { ConsoleDB } from '../shared/console/ConsoleDB';
 import { createExtendedConsole, registerConfigAdapter } from '../shared/console/ExtendedConsole';
@@ -592,6 +595,7 @@ const configureIpc = (win) => {
   ipcMain.on('renderer-ready', () => {
     // The renderer is playing, so it doesn't need reloading.
     clearRendererStartCheck();
+    rendererReloads = 0;
 
     // Nothing to restore until the first boot has built a schedule
     if (!manager) {
@@ -715,7 +719,55 @@ const getWindowGeometry = (): WindowGeometry => {
  * Applies the display profile's offset/size settings to the window. A missing or zero size means
  * fullscreen, which is also what a new install gets before it has registered with the CMS.
  */
+// Onda: finestra ridimensionabile per le prove (impostazione "Finestra") e primo piano. Le dimensioni in finestra si
+// impostano solo entrando in quella modalità, così chi la ridimensiona non se la vede rimettere a posto.
+let windowedCssKey: string | null = null;
+let windowed = false;
+
 const applyWindowGeometry = (win: BrowserWindow) => {
+  const o = playerOpts();
+  if (o.window === 'window') {
+    if (!windowed || win.isFullScreen()) {
+      const area = targetDisplay().workArea;
+      const w = Math.round(area.width * 0.6);
+      const h = Math.round(area.height * 0.6);
+      const bounds = { x: area.x + Math.round((area.width - w) / 2), y: area.y + Math.round((area.height - h) / 2), width: w, height: h };
+      win.setResizable(true);
+      const set = () => win.setBounds(bounds);
+      if (win.isFullScreen()) {
+        win.once('leave-full-screen', set);
+        win.setFullScreen(false);
+      } else {
+        set();
+      }
+      state.width = w;
+      state.height = h;
+      windowed = true;
+      console.log('[ONDA] Finestra ridimensionabile (impostazione del player)');
+    }
+    if (windowedCssKey === null) {
+      // senza cornice: si sposta trascinando la barra in alto
+      win.webContents.insertCSS('#nav-bar{-webkit-app-region:drag}#nav-bar button{-webkit-app-region:no-drag}')
+        .then((k) => { windowedCssKey = k; }).catch(() => { /* pagina non ancora caricata */ });
+    }
+  } else {
+    if (windowed) {
+      windowed = false;
+      if (windowedCssKey !== null) {
+        void win.webContents.removeInsertedCSS(windowedCssKey).catch(() => { /* ricaricata */ });
+        windowedCssKey = null;
+      }
+    }
+    applyProfileGeometry(win);
+  }
+  const top = o.on_top && o.window !== 'window';
+  if (win.isAlwaysOnTop() !== top) {
+    win.setAlwaysOnTop(top, 'screen-saver');
+    console.log(`[ONDA] Sempre in primo piano: ${top ? 'sì' : 'no'}`);
+  }
+};
+
+const applyProfileGeometry = (win: BrowserWindow) => {
   const geometry = getWindowGeometry();
 
   if (geometry.width <= 0 || geometry.height <= 0) {
@@ -777,6 +829,9 @@ let mainWindow: BrowserWindow;
 // How long a configured renderer has to start playing after it loads.
 const RENDERER_START_TIMEOUT_MS = 60 * 1000;
 let rendererStartTimer: NodeJS.Timeout | null = null;
+// Onda: dopo 3 ricaricamenti senza partire si riavvia il player (e, se non basta, il watchdog riavvia il computer)
+const RENDERER_MAX_RELOADS = 3;
+let rendererReloads = 0;
 
 /**
  * Reloads the renderer if it doesn't start playing within RENDERER_START_TIMEOUT_MS, for
@@ -794,6 +849,11 @@ function watchRendererStart(win: BrowserWindow) {
     rendererStartTimer = null;
     console.error(`[MAIN] The renderer did not start playing within ${RENDERER_START_TIMEOUT_MS / 1000} seconds, reloading it`);
 
+    rendererReloads += 1;
+    if (rendererReloads >= RENDERER_MAX_RELOADS) {
+      relaunchPlayer(`Il renderer non è partito dopo ${rendererReloads} tentativi`);
+      return;
+    }
     if (!win.isDestroyed()) {
       win.webContents.reload();
     }
@@ -1989,13 +2049,26 @@ app.whenReady().then(() => {
 
   // Start with the desktop session on real installs, as the legacy player's desktop entry did.
   if (!is.dev) {
-    ensureAutostartEntry();
+    ensureAutostartEntry(playerOpts().autostart);
   }
+  // Onda: se i riavvii del player non bastano, riavvio del computer (impostazione "reboot_pc")
+  setRebootPolicy(() => playerOpts().reboot_pc);
 
   createWindow().then(() => {
     // Onda: provisioning, sincronizzazione delle impostazioni e PIN per la chiusura
     initOnda({ hardwareKey: `${config.hardwareKey}`, configured: config.isConfigured(),
-      reapplyDisplay: () => mainWindow && !mainWindow.isDestroyed() && applyWindowGeometry(mainWindow) });
+      reapplyDisplay: () => mainWindow && !mainWindow.isDestroyed() && applyWindowGeometry(mainWindow),
+      // impostazioni di avvio e finestra cambiate sul player o da Onda: valgono subito
+      applyOpts: (o) => {
+        if (!is.dev) {
+          ensureAutostartEntry(o.autostart);
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          applyWindowGeometry(mainWindow);
+        }
+      },
+      startup: () => ({ autostart: playerOpts().autostart, registered: autostartRegistered(),
+        restarts: recentRestarts(), last_reboot: lastReboot() }) });
     guardWindow(mainWindow);
     // Onda: eventi e reazioni (WebSocket verso Onda, codici trigger del layout del loop)
     initEvents((code) => handleTrigger(code));

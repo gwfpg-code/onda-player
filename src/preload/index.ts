@@ -147,4 +147,7 @@ contextBridge.exposeInMainWorld('ondaAPI', {
   quit: (pin: string) => ipcRenderer.invoke('onda-quit', pin),
   // eventi: widget in onda (riconoscimento dei contenuti obbligatori della Direzione)
   widget: (phase: 'start' | 'end', widgetId: number) => ipcRenderer.send('onda-widget', phase, widgetId),
+  // avvio automatico, finestra, primo piano, riavvio del computer
+  getOpts: () => ipcRenderer.invoke('onda-opts-get'),
+  setOpts: (pin: string, opts: any) => ipcRenderer.invoke('onda-opts-set', pin, opts),
 });

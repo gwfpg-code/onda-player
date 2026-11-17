@@ -25,9 +25,13 @@ import { dataDir, orderedDisplays } from './onda';
 import { isOn, normalize } from './hours';
 import { keepDisplayAwake, monitorOff, monitorOn, supported, PowerResult } from './power';
 
+export type PlayerOpts = { autostart: boolean; window: 'fullscreen' | 'window'; on_top: boolean; reboot_pc: boolean;
+  updated_at?: string };
+const OPTS_DEFAULT: PlayerOpts = { autostart: true, window: 'fullscreen', on_top: true, reboot_pc: true };
+
 type OndaSettings = {
   onda_url?: string; display?: string | number; splash?: 'onda' | 'client' | 'black'; pin_hash?: string;
-  tenant?: string; hours?: any;
+  tenant?: string; hours?: any; player_opts?: PlayerOpts;
 };
 
 let hardwareKey = '';
@@ -35,6 +39,8 @@ let lastStatus: any = { status: 'unknown' };
 let syncTimer: NodeJS.Timeout | null = null;
 let allowQuit = false;
 let onDisplayChange: (() => void) | null = null;
+let onOptsChange: ((o: PlayerOpts) => void) | null = null;
+let startupInfo: () => any = () => ({});
 
 const settingsFile = () => join(dataDir(), 'onda.json');
 const identityFile = () => join(dataDir(), 'onda', 'identity.json');
@@ -71,6 +77,30 @@ function secret(): string {
 /** Identità del dispositivo verso Onda (chiave hardware + segreto), usata anche dal collegamento eventi. */
 export function deviceIdentity(): { hardwareKey: string; secret: string } {
   return { hardwareKey, secret: secret() };
+}
+
+/** Avvio automatico, finestra, primo piano, riavvio del computer: dal player o da Onda, vince la più recente. */
+export function playerOpts(): PlayerOpts {
+  const o: any = readSettings().player_opts || {};
+  return {
+    autostart: o.autostart !== false, window: o.window === 'window' ? 'window' : 'fullscreen', on_top: o.on_top !== false,
+    reboot_pc: o.reboot_pc !== false, updated_at: o.updated_at || '',
+  };
+}
+
+function storeOpts(o: PlayerOpts) {
+  const before = playerOpts();
+  writeSettings({ player_opts: o });
+  const after = playerOpts();
+  if (JSON.stringify({ ...before, updated_at: '' }) !== JSON.stringify({ ...after, updated_at: '' }) && onOptsChange) {
+    onOptsChange(after);
+  }
+}
+
+/** Cambiate sul player (finestra Impostazioni): valgono subito e vanno a Onda al prossimo contatto. */
+export function setPlayerOpts(o: Partial<PlayerOpts>) {
+  storeOpts({ ...playerOpts(), ...o, updated_at: new Date().toISOString() });
+  void hello();
 }
 
 export function ondaUrl(): string {
@@ -140,6 +170,7 @@ export async function hello(): Promise<any> {
         hardware_key: hardwareKey, secret: secret(), platform: process.platform,
         version: app.getVersion().includes('onda') ? app.getVersion() : `${app.getVersion()}-onda`, hostname: hostname(), displays,
         capabilities: supported() ? ['monitor_power'] : [], monitor: lastPower,
+        player_opts: readSettings().player_opts?.updated_at ? playerOpts() : undefined, startup: startupInfo(),
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -155,6 +186,10 @@ export async function hello(): Promise<any> {
       writeSettings({ display: c.display || '', splash: c.splash || 'onda', pin_hash: c.pin_hash || '', tenant: c.tenant || '',
         hours: normalize(c.hours) });
       void applyHours();
+      const theirs = c.player_opts;
+      if (theirs?.updated_at && (!playerOpts().updated_at || Date.parse(theirs.updated_at) > Date.parse(playerOpts().updated_at!))) {
+        storeOpts({ ...OPTS_DEFAULT, ...theirs });
+      }
       if (c.splash === 'client') {
         await downloadSplash(base);
       }
@@ -249,9 +284,24 @@ function identify() {
   });
 }
 
-export function initOnda(opts: { hardwareKey: string; configured: boolean; reapplyDisplay: () => void }) {
+export function initOnda(opts: { hardwareKey: string; configured: boolean; reapplyDisplay: () => void;
+  applyOpts: (o: PlayerOpts) => void; startup: () => any }) {
   hardwareKey = opts.hardwareKey;
   onDisplayChange = opts.reapplyDisplay;
+  onOptsChange = opts.applyOpts;
+  startupInfo = opts.startup;
+  ipcMain.handle('onda-opts-get', () => ({ ...playerOpts(), startup: startupInfo() }));
+  ipcMain.handle('onda-opts-set', (_e, pin: string, o: Partial<PlayerOpts>) => {
+    if (!checkPin(pin)) {
+      return { ok: false, error: 'PIN errato' };
+    }
+    const clean: Partial<PlayerOpts> = {
+      autostart: !!o.autostart, window: o.window === 'window' ? 'window' : 'fullscreen', on_top: !!o.on_top,
+      reboot_pc: !!o.reboot_pc,
+    };
+    setPlayerOpts(clean);
+    return { ok: true };
+  });
   if (opts.configured && ondaUrl()) {
     scheduleSync(20);
   }

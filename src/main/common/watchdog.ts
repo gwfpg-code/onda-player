@@ -26,8 +26,9 @@
  * restart-on-crash, so this restores equivalent behaviour in-process.
  */
 import { app, BrowserWindow } from 'electron';
+import { execFile } from 'child_process';
 import { join } from 'path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 
 import { getPlayerDataDir, isSnap } from './paths';
@@ -40,6 +41,56 @@ const RESTART_WINDOW_MS = 10 * 60 * 1000;
 const UNRESPONSIVE_GRACE_MS = 30 * 1000;
 
 const RESTART_LOG_FILE = 'watchdog-restarts.json';
+
+// Onda: se i riavvii del player non bastano, riavvio del computer (se l'impostazione lo consente), al massimo una
+// volta all'ora. L'ora dell'ultimo riavvio sta in watchdog-reboot.json.
+const REBOOT_LOG_FILE = 'watchdog-reboot.json';
+const REBOOT_MIN_INTERVAL_MS = 60 * 60 * 1000;
+let rebootAllowed: () => boolean = () => false;
+
+export function setRebootPolicy(fn: () => boolean): void {
+  rebootAllowed = fn;
+}
+
+function rebootLogPath(): string {
+  return join(getPlayerDataDir(app.getPath('userData')), REBOOT_LOG_FILE);
+}
+
+/** Ora (ISO) dell'ultimo riavvio del computer chiesto dal player, o ''. */
+export function lastReboot(): string {
+  try {
+    return `${JSON.parse(readFileSync(rebootLogPath(), 'utf-8')).at || ''}`;
+  } catch {
+    return '';
+  }
+}
+
+/** Riavvii del player negli ultimi 10 minuti (per la scheda dello schermo in Onda). */
+export function recentRestarts(): number {
+  return readRecentRestarts().length;
+}
+
+function rebootComputer(reason: string): boolean {
+  const last = Date.parse(lastReboot() || '');
+  if (!rebootAllowed() || (!isNaN(last) && Date.now() - last < REBOOT_MIN_INTERVAL_MS)) {
+    return false;
+  }
+  try {
+    writeFileSync(rebootLogPath(), JSON.stringify({ at: new Date().toISOString(), reason }));
+  } catch (err) {
+    console.error('[Watchdog] Failed to record reboot:', err);
+  }
+  console.error(`[Watchdog] ${reason}: i riavvii del player non bastano, riavvio il computer`);
+  const [cmd, args] = process.platform === 'win32'
+    ? ['shutdown', ['/r', '/t', '30', '/c', 'Onda Player: riavvio dopo blocchi ripetuti']]
+    : ['systemctl', ['reboot']];
+  execFile(cmd as string, args as string[], (err) => {
+    if (err) {
+      console.error(`[Watchdog] Riavvio del computer non riuscito (${cmd}): ${err.message}`);
+    }
+  });
+  return true;
+}
 
 const AUTOSTART_ENTRY = `[Desktop Entry]
 Type=Application
@@ -83,10 +134,14 @@ let delayedRelaunch: ReturnType<typeof setTimeout> | null = null;
  * relaunch is more predictable than reloading the renderer in place (and avoids
  * re-registering the IPC handlers that `init()` sets up once per process).
  */
-function relaunchPlayer(reason: string): void {
+export function relaunchPlayer(reason: string): void {
   const recent = readRecentRestarts();
 
   if (recent.length >= MAX_RESTARTS) {
+    // Onda: prima di aspettare, il riavvio del computer (se consentito e non già fatto nell'ultima ora)
+    if (rebootComputer(reason)) {
+      return;
+    }
     // Stopping for good would leave the screen blank until someone restarts the player, so
     // wait until the oldest restart leaves the window and try again then.
     if (delayedRelaunch !== null) {
@@ -169,12 +224,23 @@ export function installCrashRecovery(win: BrowserWindow): void {
  * Under snap confinement the real ~/.config is not writable, so the entry goes in
  * SNAP_USER_DATA, which snapd's user session agent scans for autostart entries.
  */
-function ensureLinuxAutostartEntry(): void {
-  try {
-    const base = isSnap() ? (process.env.SNAP_USER_DATA as string) : homedir();
-    const autostartDir = join(base, '.config', 'autostart');
-    const entryPath = join(autostartDir, 'onda-player.desktop');
+function linuxAutostartPath(): string {
+  const base = isSnap() ? (process.env.SNAP_USER_DATA as string) : homedir();
+  return join(base, '.config', 'autostart', 'onda-player.desktop');
+}
 
+function ensureLinuxAutostartEntry(enabled: boolean): void {
+  try {
+    const entryPath = linuxAutostartPath();
+    const autostartDir = join(entryPath, '..');
+
+    if (!enabled) {
+      if (existsSync(entryPath)) {
+        unlinkSync(entryPath);
+        console.log(`[Watchdog] Removed autostart entry ${entryPath}`);
+      }
+      return;
+    }
     if (existsSync(entryPath)) return;
 
     mkdirSync(autostartDir, { recursive: true });
@@ -193,10 +259,10 @@ function ensureLinuxAutostartEntry(): void {
  * `setLoginItemSettings` is Electron's cross-platform wrapper for the `HKCU\...\Run` registry
  * key on Windows — no manual registry or shortcut handling needed.
  */
-function ensureWindowsAutostartEntry(): void {
+function ensureWindowsAutostartEntry(enabled: boolean): void {
   try {
-    app.setLoginItemSettings({ openAtLogin: true });
-    console.log('[Watchdog] Configured login item for autostart');
+    app.setLoginItemSettings({ openAtLogin: enabled });
+    console.log(`[Watchdog] Login item for autostart ${enabled ? 'configured' : 'removed'}`);
   } catch (err) {
     console.error('[Watchdog] Failed to configure autostart:', err);
   }
@@ -206,11 +272,24 @@ function ensureWindowsAutostartEntry(): void {
  * Start the player automatically when the desktop session logs in. Dispatches to the
  * platform-appropriate mechanism — Windows and Linux have no autostart primitive in common.
  */
-export function ensureAutostartEntry(): void {
+export function ensureAutostartEntry(enabled = true): void {
   if (process.platform === 'win32') {
-    ensureWindowsAutostartEntry();
+    ensureWindowsAutostartEntry(enabled);
     return;
   }
 
-  ensureLinuxAutostartEntry();
+  ensureLinuxAutostartEntry(enabled);
+}
+
+/** Il sistema avvierà davvero il player all'accesso? (Windows: anche se disattivato in "App di avvio") */
+export function autostartRegistered(): boolean {
+  try {
+    if (process.platform === 'win32') {
+      const st: any = app.getLoginItemSettings();
+      return !!(st.executableWillLaunchAtLogin ?? st.openAtLogin);
+    }
+    return existsSync(linuxAutostartPath());
+  } catch {
+    return false;
+  }
 }
