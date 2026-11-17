@@ -31,7 +31,8 @@ Il player riceve indirizzo e chiave del motore, si registra e Onda lo abbina e l
 - **Sincronizzazione:** ogni 5 minuti il player richiama Onda e applica monitor, schermata di attesa, PIN e orari di accensione cambiati dal pannello.
 - **Configurazione manuale** (indirizzo e chiave del CMS, come in Xibo): pulsante in basso nella schermata del codice.
 - Codice: `src/main/onda/provision.ts`, `src/renderer/src/onda/OndaScreen.ts`. API di Onda: `POST /api/player/hello`,
-  `GET /api/player/splash`.
+  `GET /api/player/splash` (dalla onda.7 chiave hardware e segreto negli header `X-Onda-Hardware-Key` e
+  `X-Onda-Secret`, non più nell'indirizzo: lì il segreto finiva nei log di accesso di Onda).
 
 ## Eventi e reazioni
 
@@ -51,8 +52,11 @@ Si presenta con chiave hardware e segreto, come per il provisioning, riceve il p
   alle destinazioni.
 - **Collegamento:** ping ogni 30 secondi, nuovo tentativo con attese crescenti (da 2 a 60 secondi). Registro del
   player: righe `[ONDA] Eventi: …`.
-- **Limiti:** un contenuto già partito arriva alla sua fine (una durata fissa più corta, o "Annulla", non lo
-  tagliano); il contenuto obbligatorio della Direzione non è ancora riconosciuto; il webhook locale in LAN non c'è ancora.
+- **Fine della reazione:** allo scadere della durata, con "Annulla" o quando un'altra la sostituisce, se il contenuto
+  è ancora in corso il player attiva `onda-stop`: un contenuto vuoto di 1 secondo nel cassetto prende il suo posto e
+  torna il loop. "Ricomincia" fa prima lo stop e poi riparte dal primo contenuto (il renderer ignora un contenuto del
+  cassetto già in coda). Serve il layout pubblicato da Onda 0.18.0 o successiva.
+- **Limiti:** il contenuto obbligatorio della Direzione non è ancora riconosciuto; il webhook locale in LAN non c'è ancora.
 
 ## PIN
 

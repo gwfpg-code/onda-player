@@ -104,7 +104,11 @@ export function checkPin(pin: string): boolean {
 async function downloadSplash(base: string) {
   const target = join(dataDir(), 'onda', 'splash.png');
   try {
-    const res = await fetch(`${base}/api/player/splash?hk=${encodeURIComponent(hardwareKey)}&secret=${encodeURIComponent(secret())}`);
+    // identità negli header, non nell'indirizzo: così il segreto non finisce nei log di accesso
+    const res = await fetch(`${base}/api/player/splash`, {
+      headers: { 'X-Onda-Hardware-Key': hardwareKey, 'X-Onda-Secret': secret() },
+      signal: AbortSignal.timeout(15000),
+    });
     if (!res.ok) {
       if (res.status === 404 && existsSync(target)) {
         unlinkSync(target);

@@ -12,8 +12,10 @@
  * sopra il loop, che intanto continua sotto. Esiti, inizio e fine tornano a Onda per il registro e per
  * reaction.started / reaction.ended.
  *
- * Limiti di questa versione: un contenuto già partito arriva alla sua fine (una durata fissa più corta, o
- * "Annulla", non lo tagliano); il contenuto obbligatorio della Direzione non è ancora riconosciuto.
+ * Fine della reazione (durata, "Annulla", sostituzione): se il contenuto è ancora in corso il player attiva
+ * STOP_CODE, un contenuto vuoto di 1 s nel cassetto che XLR mette al posto di quello in corso (layout pubblicati da
+ * Onda 0.18.0; con quelli precedenti il codice non trova l'azione e il contenuto arriva alla sua fine).
+ * Limite: il contenuto obbligatorio della Direzione non è ancora riconosciuto.
  */
 import { app } from 'electron';
 import reactionsSource from './onda-reactions.js?raw';
@@ -28,6 +30,8 @@ const PING_MS = 30 * 1000;
 const SILENCE_MS = 75 * 1000;              // nessun messaggio (nemmeno pong) per tanto: collegamento perso
 const RETRY_MIN_MS = 2 * 1000;
 const RETRY_MAX_MS = 60 * 1000;
+const STOP_CODE = 'onda-stop';             // REACTION_STOP_CODE di Onda (backend/app/engine/base.py)
+const STOP_GAP_MS = 300;                   // tra lo stop e il primo contenuto quando una reazione ricomincia
 
 let OndaReactions: any = null;
 let fire: Trigger | null = null;
@@ -38,7 +42,8 @@ let tickTimer: NodeJS.Timeout | null = null;
 let lastMessageAt = 0;
 let pkg: any = null;
 let executor: any = null;
-let playing: { ruleId: string; eventId: number | null; timer: NodeJS.Timeout | null } | null = null;
+type Playing = { ruleId: string; eventId: number | null; timer: NodeJS.Timeout | null; itemEndsAt: number };
+let playing: Playing | null = null;
 let status: { connected: boolean; screen?: string; rules?: number; version?: string; error?: string } = { connected: false };
 
 /** onda-reactions.js è UMD (module.exports in Node): lo valuto dal testo, senza toccare il file. */
@@ -65,20 +70,25 @@ function wsUrl(base: string): string {
 // --------------------------------------------------------------------------
 // Riproduzione: i codici trigger dei contenuti, uno dopo l'altro, fino alla fine prevista
 // --------------------------------------------------------------------------
-function stopPlayback() {
+/** Ferma la sequenza; con cutContent toglie anche il contenuto ancora sullo schermo (STOP_CODE). */
+function stopPlayback(cutContent = false) {
   if (playing?.timer) {
     clearTimeout(playing.timer);
+  }
+  if (cutContent && playing && Date.now() < playing.itemEndsAt - STOP_GAP_MS && fire) {
+    console.log('[ONDA] Reazione finita: tolgo il contenuto ancora in corso');
+    fire(STOP_CODE).catch((e) => console.warn('[ONDA] Stop non eseguito', e));
   }
   playing = null;
 }
 
-function play(view: View, eventId: number | null) {
+function play(view: View, eventId: number | null, delayMs = 0) {
   stopPlayback();
   const items = (view.items || []).filter((it) => it.trigger);
   if (!items.length || !fire) {
     return;
   }
-  const state = { ruleId: view.rule_id, eventId, timer: null as NodeJS.Timeout | null };
+  const state: Playing = { ruleId: view.rule_id, eventId, timer: null, itemEndsAt: 0 };
   playing = state;
   let i = 0;
   const next = () => {
@@ -93,9 +103,15 @@ function play(view: View, eventId: number | null) {
     i += 1;
     console.log(`[ONDA] Reazione "${view.name}": contenuto ${it.name} (${it.trigger})`);
     fire!(it.trigger!).catch((e) => console.warn('[ONDA] Trigger non eseguito', it.trigger, e));
-    state.timer = setTimeout(next, Math.max(1, it.duration || 10) * 1000);
+    const ms = Math.max(1, it.duration || 10) * 1000;
+    state.itemEndsAt = Date.now() + ms;
+    state.timer = setTimeout(next, ms);
   };
-  next();
+  if (delayMs > 0) {
+    state.timer = setTimeout(next, delayMs);
+  } else {
+    next();
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -111,9 +127,9 @@ function startReaction(view: View, eventId: number | null) {
   send({ type: 'reaction', phase: 'started', rule_id: view.rule_id, event_id: eventId });
 }
 
-function endReaction(ruleId: string) {
+function endReaction(ruleId: string, cutContent = true) {
   const eventId = playing && playing.ruleId === ruleId ? playing.eventId : null;
-  stopPlayback();
+  stopPlayback(cutContent);
   send({ type: 'reaction', phase: 'ended', rule_id: ruleId, event_id: eventId });
 }
 
@@ -129,14 +145,17 @@ function onEvent(eventId: number, event: any) {
     return;                                // "solo uscita": la esegue Onda, non lo schermo
   }
   if (d.closed) {
-    endReaction(d.closed);
+    endReaction(d.closed, !d.start);          // se ne parte un'altra, il suo contenuto prende il posto di quello in corso
   }
   if (d.start) {
     const same = before && before.rule_id === d.start.rule_id && !d.closed;
     if (!same) {
       startReaction(d.start, eventId);
     } else if (d.detail === 'Reazione ricominciata') {
-      play(d.start, eventId);              // ricomincia dal primo contenuto
+      // XLR ignora un contenuto del cassetto già in coda: prima lo stop, poi di nuovo il primo contenuto
+      const restartId = playing?.eventId ?? eventId;
+      stopPlayback(true);
+      play(d.start, restartId, STOP_GAP_MS);
     }                                      // prolungata: la sequenza continua fino alla nuova fine
   }
   send({ type: 'outcome', event_id: eventId, rule_id: d.rule_id, result: d.result, detail: d.detail,
