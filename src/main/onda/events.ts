@@ -66,6 +66,8 @@ function ctx() {
   return { mandatory: mandatoryOn };
 }
 
+/** Lo stato cambia solo quando parte un contenuto del loop: tra due contenuti obbligatori di fila la reazione
+ * continua ad aspettare (partirebbe sopra il secondo), e parte quando arriva un contenuto non obbligatorio. */
 function onWidget(phase: string, widgetId: number) {
   if (phase === 'start' && loopIds.has(widgetId)) {
     const on = mandatoryIds.has(widgetId);
@@ -73,8 +75,6 @@ function onWidget(phase: string, widgetId: number) {
       console.log(`[ONDA] Eventi: contenuto obbligatorio della Direzione ${on ? 'in onda' : 'finito'}`);
     }
     mandatoryOn = on;
-  } else if (phase === 'end' && mandatoryOn && mandatoryIds.has(widgetId)) {
-    mandatoryOn = false;
   }
 }
 let playing: Playing | null = null;

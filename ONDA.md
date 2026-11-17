@@ -62,8 +62,8 @@ Si presenta con chiave hardware e segreto, come per il provisioning, riceve il p
 - **Contenuto obbligatorio della Direzione:** Onda manda nel pacchetto i widget del loop e quelli obbligatori
   (`loop.mandatory_widgets`); il renderer segnala ogni `widgetStart`/`widgetEnd` al processo principale (IPC
   `onda-widget`). Mentre è in onda un contenuto obbligatorio, una reazione senza "Può interrompere i contenuti
-  obbligatori" resta in attesa (nel registro "In attesa") e parte alla sua fine ("Eseguito"), o viene scartata dopo
-  5 minuti. Una reazione già in corso non viene chiusa se sotto parte un contenuto obbligatorio.
+  obbligatori" resta in attesa (nel registro "In attesa") e parte quando nel loop arriva un contenuto non obbligatorio
+  ("Eseguito"), o viene scartata dopo 5 minuti: con un loop fatto solo di contenuti obbligatori non parte mai. Una reazione già in corso non viene chiusa se sotto parte un contenuto obbligatorio.
 - **Senza rete:** l'ultimo pacchetto regole resta in `onda/rules.json` e vale anche se all'avvio Onda non risponde;
   esiti e reazioni restano in coda (fino a 500) e partono quando il collegamento torna.
 - **Limiti:** il contenuto obbligatorio della Direzione non è ancora riconosciuto.
