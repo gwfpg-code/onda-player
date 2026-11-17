@@ -25,7 +25,7 @@ import { join } from 'path';
 import reactionsSource from './onda-reactions.js?raw';
 import { applyLocalWebhook } from './localwebhook';
 import { dataDir } from './onda';
-import { deviceIdentity, managedByOnda, ondaUrl } from './provision';
+import { deviceIdentity, hello, managedByOnda, ondaUrl } from './provision';
 
 type Trigger = (code: string) => Promise<void>;
 type Item = { media: string; kind: string; name: string; duration: number; trigger?: string };
@@ -354,6 +354,10 @@ function connect() {
       onRules(msg.pkg);
     } else if (msg.type === 'event') {
       onEvent(msg.event_id, msg.event || {});
+    } else if (msg.type === 'config') {
+      // impostazioni cambiate nel pannello di Onda: le rileggo subito invece di aspettare il controllo periodico
+      console.log('[ONDA] Impostazioni cambiate in Onda: le rileggo');
+      void hello();
     }
   };
   sock.onclose = (e: any) => {

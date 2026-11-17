@@ -96,8 +96,11 @@ Authorization: Bearer <token della fonte>
 ## Avvio, finestra e blocchi
 
 Si cambiano sul player (muovi il mouse › barra in alto › **Impostazioni**, con il PIN se impostato) oppure nella
-scheda dello schermo in Onda (Onda Player › Avvio e finestra). Valgono subito; vince la modifica più recente
-(`player_opts.updated_at` in `onda.json` e in Onda).
+scheda dello schermo in Onda (Onda Player › Avvio e finestra). Vince la modifica più recente
+(`player_opts.updated_at` in `onda.json` e in Onda). Dal player valgono subito. Da Onda il player le prende a ogni
+contatto (`hello`): all'avvio, ogni 5 minuti e, se è collegato agli eventi, subito dopo il salvataggio, perché Onda
+gli manda `{"type": "config"}` sul collegamento eventi (dalla versione 4.0.13-onda.12). La scheda dice se le ultime
+impostazioni salvate sono già arrivate.
 
 | Impostazione | Predefinita | Cosa fa |
 |---|---|---|
