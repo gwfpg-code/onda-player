@@ -15,7 +15,7 @@ repository pubblico, o una copia su richiesta, soddisfa l'obbligo. Le note di co
 | Orari di accensione: spegnimento del monitor fuori orario | `src/main/onda/hours.ts`, `src/main/onda/power.ts`, `src/main/onda/provision.ts`, `snap/snapcraft.yaml` |
 | Server locale (porta 9696) solo su `127.0.0.1` e `::1`, non raggiungibile dalla LAN | `src/main/express.ts` |
 | Eventi e reazioni: collegamento con Onda (WebSocket), esecutore delle reazioni, webhook locale | `src/main/onda/events.ts`, `src/main/onda/onda-reactions.js`, `src/main/onda/localwebhook.ts` |
-| Installer: MSI "Onda Player" con UpgradeCode proprio, .deb, snap `onda-player` | `installer/windows/`, `forge.config.cjs`, `snap/` |
+| Installer: MSI "Onda Player" con UpgradeCode proprio e proprietà `ONDA_URL`, .deb, snap `onda-player` | `installer/windows/`, `forge.config.cjs`, `snap/` |
 | Build su GitHub senza firma | `.github/workflows/onda-build.yml` (tolti i workflow di Xibo) |
 
 ## Provisioning da Onda
@@ -24,9 +24,15 @@ Il player non configurato mostra il logo Onda animato e un **codice di 6 caratte
 pannello di Onda (Schermi › Aggiungi schermo › Onda Player) insieme a sede, nome, formato, monitor, schermata di attesa e PIN.
 Il player riceve indirizzo e chiave del motore, si registra e Onda lo abbina e lo autorizza da solo.
 
-- **Indirizzo di Onda:** al primo avvio il player lo chiede (es. `http://192.168.1.10:8080`). Per non digitarlo, prima
-  dell'avvio crea `onda.json` nella cartella dati con `{"onda_url": "http://192.168.1.10:8080"}`, oppure imposta la
-  variabile d'ambiente `ONDA_URL`.
+- **Indirizzo di Onda:** gli installer scaricati da Onda (Console › Onda Player, o "Aggiungi schermo" nel pannello)
+  ce l'hanno già dentro e il player non lo chiede (dalla versione 4.0.13-onda.13). Onda lo scrive:
+  - nel .msi come proprietà `ONDA_URL`, che il pacchetto copia nel registro (`HKLM\SOFTWARE\Onda\Onda Player` ›
+    `OndaUrl`); a mano: `msiexec /i onda-player.msi ONDA_URL=http://192.168.1.10:8080`;
+  - nel .deb come script `postinst`, che scrive `/etc/onda-player/onda.json` (tolto con `apt purge`).
+
+  Al primo avvio il player lo copia nel suo `onda.json`, così resta anche dopo un aggiornamento con l'installer di
+  GitHub. In ordine vale: variabile d'ambiente `ONDA_URL`, `onda.json` nella cartella dati, installer. Senza nessuno dei
+  tre il player lo chiede (es. `http://192.168.1.10:8080`).
 - **Identità del dispositivo:** chiave hardware + un segreto generato al primo avvio (`onda/identity.json`). Il codice da
   solo non basta a farsi mandare la configurazione.
 - **Sincronizzazione:** ogni 5 minuti il player richiama Onda e applica monitor, schermata di attesa, PIN e orari di accensione cambiati dal pannello.

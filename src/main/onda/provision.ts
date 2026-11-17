@@ -17,6 +17,7 @@
  *   onda/splash.<ext>    logo del cliente per la schermata di attesa
  */
 import { app, BrowserWindow, ipcMain, powerMonitor, screen } from 'electron';
+import { execFileSync } from 'child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { hostname } from 'os';
@@ -104,7 +105,42 @@ export function setPlayerOpts(o: Partial<PlayerOpts>) {
 }
 
 export function ondaUrl(): string {
-  return (process.env.ONDA_URL || readSettings().onda_url || '').replace(/\/+$/, '');
+  const saved = process.env.ONDA_URL || readSettings().onda_url;
+  if (saved) {
+    return saved.replace(/\/+$/, '');
+  }
+  // Installer scaricato da Onda Console: l'indirizzo è nel registro (Windows) o in /etc/onda-player (Linux).
+  // Lo copio in onda.json, così resta anche dopo un aggiornamento con un installer senza indirizzo.
+  const fromInstaller = installerUrl();
+  if (fromInstaller) {
+    writeSettings({ onda_url: fromInstaller });
+    console.log(`[ONDA] Indirizzo di Onda dall'installer: ${fromInstaller}`);
+  }
+  return fromInstaller;
+}
+
+let installerChecked = false;
+
+/** Indirizzo di Onda lasciato dall'installer, se valido; letto una volta sola. */
+export function installerUrl(): string {
+  if (installerChecked) {
+    return '';
+  }
+  installerChecked = true;
+  let url = '';
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('reg', ['query', 'HKLM\\SOFTWARE\\Onda\\Onda Player', '/v', 'OndaUrl'],
+        { encoding: 'utf-8', windowsHide: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+      url = (/OndaUrl\s+REG_SZ\s+(\S+)/.exec(out) || [])[1] || '';
+    } else if (process.platform === 'linux' && existsSync('/etc/onda-player/onda.json')) {
+      url = JSON.parse(readFileSync('/etc/onda-player/onda.json', 'utf-8')).onda_url || '';
+    }
+  } catch {
+    return '';                                  // nessun indirizzo dall'installer
+  }
+  url = `${url}`.trim().replace(/\/+$/, '');
+  return /^https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?(\/[A-Za-z0-9._~/-]*)?$/.test(url) ? url : '';
 }
 
 export function splashMode(): string {

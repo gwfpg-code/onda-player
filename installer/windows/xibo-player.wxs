@@ -101,9 +101,16 @@
       </Directory>
     </StandardDirectory>
 
+    <!--
+      Onda: indirizzo di Onda. Onda Console lo scrive nella tabella Property dell'installer che si scarica da lì
+      (oppure: msiexec /i onda-player.msi ONDA_URL=http://...); il player lo legge dal registro al primo avvio.
+    -->
+    <Property Id="ONDA_URL" Secure="yes" />
+
     <Feature Id="Main" Title="$(var.ProductName)" Level="1">
       <ComponentGroupRef Id="ApplicationFiles" />
       <ComponentGroupRef Id="ApplicationShortcuts" />
+      <ComponentGroupRef Id="OndaSettings" />
     </Feature>
 
   </Package>
@@ -115,6 +122,20 @@
     -->
     <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
       <Files Include="$(var.AppDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="OndaSettings" Directory="INSTALLFOLDER">
+      <Component Id="OndaUrl" Guid="3C7E2A90-6B1D-4E5F-8A2C-9D4B1E7F0A63" Condition="ONDA_URL">
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\$(var.Manufacturer)\$(var.ProductName)"
+          Name="OndaUrl"
+          Type="string"
+          Value="[ONDA_URL]"
+          KeyPath="yes" />
+      </Component>
     </ComponentGroup>
   </Fragment>
 
