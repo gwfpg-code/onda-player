@@ -56,6 +56,14 @@ Si presenta con chiave hardware e segreto, come per il provisioning, riceve il p
   è ancora in corso il player attiva `onda-stop`: un contenuto vuoto di 1 secondo nel cassetto prende il suo posto e
   torna il loop. "Ricomincia" fa prima lo stop e poi riparte dal primo contenuto (il renderer ignora un contenuto del
   cassetto già in coda). Serve il layout pubblicato da Onda 0.18.0 o successiva.
+- **PIP:** la regola sceglie la posizione (angoli, terzo inferiore, metà destra o sinistra); il layout del loop ha
+  una zona trasparente per ogni posizione usata, con il suo codice di stop (`onda-stop-<posizione>`, nel pacchetto
+  come `stop_trigger`). Il loop continua sotto.
+- **Contenuto obbligatorio della Direzione:** Onda manda nel pacchetto i widget del loop e quelli obbligatori
+  (`loop.mandatory_widgets`); il renderer segnala ogni `widgetStart`/`widgetEnd` al processo principale (IPC
+  `onda-widget`). Mentre è in onda un contenuto obbligatorio, una reazione senza "Può interrompere i contenuti
+  obbligatori" resta in attesa (nel registro "In attesa") e parte alla sua fine ("Eseguito"), o viene scartata dopo
+  5 minuti. Una reazione già in corso non viene chiusa se sotto parte un contenuto obbligatorio.
 - **Senza rete:** l'ultimo pacchetto regole resta in `onda/rules.json` e vale anche se all'avvio Onda non risponde;
   esiti e reazioni restano in coda (fino a 500) e partono quando il collegamento torna.
 - **Limiti:** il contenuto obbligatorio della Direzione non è ancora riconosciuto.

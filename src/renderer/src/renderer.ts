@@ -272,6 +272,10 @@ const initXlrEventHandlers = function () {
   });
 
 
+  // Onda: widget in onda, per l'esecutore delle reazioni (contenuti obbligatori della Direzione)
+  xlr.on('widgetStart', (widgetId: number) => (window as any).ondaAPI?.widget('start', widgetId));
+  xlr.on('widgetEnd', (widgetId: number) => (window as any).ondaAPI?.widget('end', widgetId));
+
   xlr.on('layoutStart', async (layout) => {
     // When a layout starts playing, update CMS with the current layout
     // if "Notify current layout" is enabled.

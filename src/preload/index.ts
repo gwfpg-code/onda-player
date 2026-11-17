@@ -145,4 +145,6 @@ contextBridge.exposeInMainWorld('ondaAPI', {
   pinRequired: () => ipcRenderer.invoke('onda-pin-required'),
   identify: () => ipcRenderer.invoke('onda-identify'),
   quit: (pin: string) => ipcRenderer.invoke('onda-quit', pin),
+  // eventi: widget in onda (riconoscimento dei contenuti obbligatori della Direzione)
+  widget: (phase: 'start' | 'end', widgetId: number) => ipcRenderer.send('onda-widget', phase, widgetId),
 });

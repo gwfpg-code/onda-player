@@ -15,9 +15,11 @@
  * Fine della reazione (durata, "Annulla", sostituzione): se il contenuto è ancora in corso il player attiva
  * STOP_CODE, un contenuto vuoto di 1 s nel cassetto che XLR mette al posto di quello in corso (layout pubblicati da
  * Onda 0.18.0; con quelli precedenti il codice non trova l'azione e il contenuto arriva alla sua fine).
- * Limite: il contenuto obbligatorio della Direzione non è ancora riconosciuto.
+ * Contenuto obbligatorio della Direzione: Onda manda nel pacchetto i widget del loop (loop.mandatory_widgets); il
+ * renderer segnala ogni widgetStart/widgetEnd (IPC onda-widget) e l'esecutore fa aspettare le reazioni che non
+ * possono interromperlo (interrupt_mandatory), come nell'anteprima del pannello.
  */
-import { app } from 'electron';
+import { app, ipcMain } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import reactionsSource from './onda-reactions.js?raw';
@@ -49,10 +51,32 @@ let tickTimer: NodeJS.Timeout | null = null;
 let lastMessageAt = 0;
 let pkg: any = null;
 let executor: any = null;
-type Playing = { ruleId: string; ref: Ref; timer: NodeJS.Timeout | null; itemEndsAt: number };
+type Playing = { ruleId: string; ref: Ref; timer: NodeJS.Timeout | null; itemEndsAt: number; stop: string };
 let welcomed = false;
 const outbox: any[] = [];
 let hold: any[] | null = null;              // messaggi trattenuti finché l'evento locale non è annunciato
+// contenuto obbligatorio della Direzione in onda: i widget arrivano col pacchetto (loop.mandatory_widgets); tengo
+// anche quelli del pacchetto precedente, perché il player passa al layout nuovo un po' dopo che Onda l'ha pubblicato
+let mandatoryIds = new Set<number>();
+let loopIds = new Set<number>();
+let mandatoryOn = false;
+let pendingRef: Ref | null = null;          // evento della reazione in attesa della fine del contenuto obbligatorio
+
+function ctx() {
+  return { mandatory: mandatoryOn };
+}
+
+function onWidget(phase: string, widgetId: number) {
+  if (phase === 'start' && loopIds.has(widgetId)) {
+    const on = mandatoryIds.has(widgetId);
+    if (on !== mandatoryOn) {
+      console.log(`[ONDA] Eventi: contenuto obbligatorio della Direzione ${on ? 'in onda' : 'finito'}`);
+    }
+    mandatoryOn = on;
+  } else if (phase === 'end' && mandatoryOn && mandatoryIds.has(widgetId)) {
+    mandatoryOn = false;
+  }
+}
 let playing: Playing | null = null;
 let status: { connected: boolean; screen?: string; rules?: number; version?: string; error?: string } = { connected: false };
 
@@ -104,8 +128,8 @@ function stopPlayback(cutContent = false) {
     clearTimeout(playing.timer);
   }
   if (cutContent && playing && Date.now() < playing.itemEndsAt - STOP_GAP_MS && fire) {
-    console.log('[ONDA] Reazione finita: tolgo il contenuto ancora in corso');
-    fire(STOP_CODE).catch((e) => console.warn('[ONDA] Stop non eseguito', e));
+    console.log(`[ONDA] Reazione finita: tolgo il contenuto ancora in corso (${playing.stop})`);
+    fire(playing.stop).catch((e) => console.warn('[ONDA] Stop non eseguito', e));
   }
   playing = null;
 }
@@ -116,7 +140,7 @@ function play(view: View, ref: Ref, delayMs = 0) {
   if (!items.length || !fire) {
     return;
   }
-  const state: Playing = { ruleId: view.rule_id, ref, timer: null, itemEndsAt: 0 };
+  const state: Playing = { ruleId: view.rule_id, ref, timer: null, itemEndsAt: 0, stop: stopCode(view.rule_id) };
   playing = state;
   let i = 0;
   const next = () => {
@@ -145,6 +169,12 @@ function play(view: View, ref: Ref, delayMs = 0) {
 // --------------------------------------------------------------------------
 // Decisioni dell'esecutore
 // --------------------------------------------------------------------------
+/** Codice che toglie il contenuto dalla zona della regola (tutto schermo o la posizione del PIP). */
+function stopCode(ruleId: string | null): string {
+  const r = (pkg?.rules || []).find((x: any) => x.id === ruleId);
+  return r?.reaction?.stop_trigger || STOP_CODE;
+}
+
 function ruleKind(ruleId: string | null): string {
   const r = (pkg?.rules || []).find((x: any) => x.id === ruleId);
   return r?.reaction?.kind || '';
@@ -168,13 +198,17 @@ export function execute(event: any, ref: Ref): any {
   }
   const t0 = Date.now();
   const before = executor.current();
-  const d = executor.handle(event, t0, { mandatory: false });
+  const d = executor.handle(event, t0, ctx());
   d.latency_ms = Date.now() - t0;
+  if (d.result === 'waiting') {
+    pendingRef = ref;
+  }
   if (d.rule_id && ruleKind(d.rule_id) === 'output') {
     return null;                           // "solo uscita": la esegue Onda, non lo schermo
   }
   if (d.closed) {
-    endReaction(d.closed, !d.start);          // se ne parte un'altra, il suo contenuto prende il posto di quello in corso
+    // se ne parte un'altra nella stessa zona, il suo contenuto prende il posto di quello in corso
+    endReaction(d.closed, !d.start || stopCode(d.closed) !== stopCode(d.start.rule_id));
   }
   if (d.start) {
     const same = before && before.rule_id === d.start.rule_id && !d.closed;
@@ -223,11 +257,19 @@ function tick() {
   if (!executor) {
     return;
   }
-  const r = executor.tick(Date.now(), { mandatory: false });
+  const r = executor.tick(Date.now(), ctx());
   if (r?.ended) {
     endReaction(r.ended);
   } else if (r?.start) {
-    startReaction(r.start, {});
+    const ref = pendingRef || {};
+    pendingRef = null;
+    startReaction(r.start, ref);
+    send({ type: 'outcome', ...ref, rule_id: r.start.rule_id, result: 'executed',
+      detail: 'Partita alla fine del contenuto obbligatorio della Direzione' });
+  } else if (r?.expired) {
+    const ref = pendingRef || {};
+    pendingRef = null;
+    send({ type: 'outcome', ...ref, result: 'discarded', detail: 'Attesa scaduta: il contenuto obbligatorio è durato oltre 5 minuti' });
   }
 }
 
@@ -241,8 +283,11 @@ function onRules(next: any) {
     if (executor?.current()) {
       endReaction(executor.current().rule_id);
     }
+    const prev = pkg?.loop;
     pkg = next;
     executor = ex;
+    mandatoryIds = new Set([...(next.loop?.mandatory_widgets || []), ...(prev?.mandatory_widgets || [])]);
+    loopIds = new Set([...(next.loop?.widgets || []), ...(prev?.widgets || [])]);
     applyLocalWebhook(next.local_webhook);
     try {
       mkdirSync(join(dataDir(), 'onda'), { recursive: true });
@@ -341,6 +386,7 @@ export function initEvents(trigger: Trigger) {
     console.warn('[ONDA] Eventi: pacchetto regole salvato non leggibile', e);
   }
   tickTimer = setInterval(tick, TICK_MS);
+  ipcMain.on('onda-widget', (_e, phase: string, widgetId: number) => onWidget(phase, Number(widgetId)));
   setInterval(() => {
     if (ws && ws.readyState === 1) {
       if (Date.now() - lastMessageAt > SILENCE_MS) {
