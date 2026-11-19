@@ -20,6 +20,7 @@
  */
 import { splashFile } from './onda/onda';
 import { splashMode } from './onda/provision';
+import { reportListen } from './onda/fileserver';
 import express from 'express';
 import corsImport from 'cors';
 import fs from 'fs/promises';
@@ -319,8 +320,10 @@ const LOOPBACK_V6 = '::1';
 function listen(server: ReturnType<typeof express>, port: number) {
   server.listen(port, LOOPBACK_V4, () => {
     isListening = true;
+    reportListen(port, 4, 'ok');
     console.log(`Xibo File Server listening on ${LOOPBACK_V4}:${port}`);
   }).on('error', (error: NodeJS.ErrnoException) => {
+    reportListen(port, 4, error.code || 'errore');
     console.error(`[FileServer] Could not listen on port ${port}, trying again in 10 seconds`, {
       code: error.code,
       message: error.message,
@@ -332,10 +335,19 @@ function listen(server: ReturnType<typeof express>, port: number) {
 
 // Onda: "localhost" può risolvere prima in ::1. Se il sistema ha IPv6 ascoltiamo anche lì, così
 // il renderer non aspetta il ripiego su 127.0.0.1; se IPv6 manca (EADDRNOTAVAIL) basta IPv4.
-function listenIPv6Loopback(server: ReturnType<typeof express>, port: number) {
+// Se ::1 è occupato da un altro programma, "localhost" può finire lì: riproviamo ogni 10 secondi
+// (in silenzio dopo il primo avviso) e lo stato va a Onda (onda/fileserver.ts).
+function listenIPv6Loopback(server: ReturnType<typeof express>, port: number, quiet = false) {
   server.listen(port, LOOPBACK_V6, () => {
+    reportListen(port, 6, 'ok');
     console.log(`Xibo File Server listening on [${LOOPBACK_V6}]:${port}`);
   }).on('error', (error: NodeJS.ErrnoException) => {
-    console.warn(`[FileServer] Not listening on [${LOOPBACK_V6}]:${port} (${error.code}): IPv4 only`);
+    reportListen(port, 6, error.code || 'errore');
+    if (!quiet) {
+      console.warn(`[FileServer] Not listening on [${LOOPBACK_V6}]:${port} (${error.code}): IPv4 only`);
+    }
+    if (error.code === 'EADDRINUSE') {
+      setTimeout(() => listenIPv6Loopback(server, port, true), 10000);
+    }
   });
 }

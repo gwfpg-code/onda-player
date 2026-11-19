@@ -223,3 +223,16 @@ git tag v4.0.14-onda.1 && git push && git push --tags   # parte la build
 Come l'originale (`npm ci`, `npm run make`). Su GitHub: tag `v*` oppure Actions › "Onda Player - build" › Run workflow.
 Gli installer non sono firmati: Windows SmartScreen chiede conferma al primo avvio. Per toglierlo serve un certificato
 di firma del codice (Azure Trusted Signing o un certificato EV).
+
+## Porta dei contenuti occupata
+
+Il player passa layout, video e pagine alla sua finestra con un piccolo server su `localhost:9696` (`src/main/express.ts`,
+solo `127.0.0.1` e `::1`). Se un altro programma tiene occupata quella porta, il player riprova ogni 10 secondi, ma
+intanto la finestra chiede i file all'altro programma e lo schermo resta grigio. Su Windows capita per esempio con
+WSL: `wslrelay.exe` inoltra a Windows le porte aperte dentro Linux (rimedio: `localhostForwarding=false` sotto
+`[wsl2]` in `%UserProfile%\.wslconfig`, poi `wsl --shutdown`).
+
+Dalla versione 4.0.13-onda.16 il player lo dice a Onda (`hello` › `file_server`: `ok`, `port`, `error`, `owner`,
+`since`). Il nome del programma lo cerca con `netstat -ano` e `tasklist` su Windows, e con `ss -ltnp` su Linux
+(`src/main/onda/fileserver.ts`). Quando la porta si occupa o si libera, il player manda subito un `hello`. Onda mostra
+l'avviso nella scheda dello schermo e in Console › Onda Player.

@@ -25,6 +25,7 @@ import { join } from 'path';
 import { dataDir, orderedDisplays } from './onda';
 import { isOn, normalize } from './hours';
 import { handleOffer, hasUpdater, updateReport } from './updater';
+import { fileServerStatus, onFileServerChange } from './fileserver';
 import { keepDisplayAwake, monitorOff, monitorOn, supported, PowerResult } from './power';
 
 export type PlayerOpts = { autostart: boolean; window: 'fullscreen' | 'window'; on_top: boolean; reboot_pc: boolean;
@@ -207,7 +208,7 @@ export async function hello(): Promise<any> {
         hardware_key: hardwareKey, secret: secret(), platform: process.platform,
         version: app.getVersion().includes('onda') ? app.getVersion() : `${app.getVersion()}-onda`, hostname: hostname(), displays,
         capabilities: [...(supported() ? ['monitor_power'] : []), ...(hasUpdater() ? ['auto_update'] : [])], monitor: lastPower,
-        update: updateReport(),
+        update: updateReport(), file_server: fileServerStatus(),
         player_opts: readSettings().player_opts?.updated_at ? playerOpts() : undefined, startup: startupInfo(),
       }),
       signal: AbortSignal.timeout(15000),
@@ -325,6 +326,20 @@ function identify() {
     setTimeout(() => !w.isDestroyed() && w.close(), 5000);
   });
 }
+
+// la porta dei contenuti si è liberata o occupata: Onda lo sa subito, non al contatto successivo
+let fsTimer: NodeJS.Timeout | null = null;
+onFileServerChange(() => {
+  if (fsTimer) {
+    clearTimeout(fsTimer);
+  }
+  fsTimer = setTimeout(() => {
+    fsTimer = null;
+    if (hardwareKey && ondaUrl()) {
+      void hello();
+    }
+  }, 3000);
+});
 
 export function initOnda(opts: { hardwareKey: string; configured: boolean; reapplyDisplay: () => void;
   applyOpts: (o: PlayerOpts) => void; startup: () => any }) {
