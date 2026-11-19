@@ -116,7 +116,8 @@ permessi per installare, quindi il lavoro si divide così:
    - **Windows:** attività pianificata `Onda Player\Aggiornamento`, eseguita come SYSTEM ogni 2 minuti
      (`onda-update.ps1`). La cartella di attesa è `%ProgramData%\Onda Player\update` e la chiave sta in
      `HKLM\SOFTWARE\Onda\Onda Player` › `UpdateKey`. Chiude il player, esegue `msiexec /qn` e lo riavvia nella
-     sessione dell'utente collegato. Registro: `C:\Windows\Temp` (o `SystemTemp`) › `onda-player-update.log`.
+     sessione dell'utente che lo stava usando, anche se è bloccata o disconnessa (proprietario di `onda-player.exe`,
+     se no di `explorer.exe`; dalla 4.0.13-onda.17). Registro: `C:\Windows\Temp` (o `SystemTemp`) › `onda-player-update.log`.
    - **Linux:** unità systemd `onda-player-update.path` e `.service` di root (`onda-update.sh`). La cartella di
      attesa è `/var/lib/onda-player/update` e la chiave sta in `/etc/onda-player/update.pem`. Installa con
      `apt-get install` e il player si riavvia da solo. Registro: `/var/log/onda-player-update.log`.

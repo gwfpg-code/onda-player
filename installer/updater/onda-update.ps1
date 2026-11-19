@@ -43,10 +43,25 @@ function Clear-Stage {
   }
 }
 
-function Start-PlayerForUser([string]$exe) {
-  # il player è un'app con finestra: va avviato nella sessione di chi è collegato, non come SYSTEM
-  $user = (Get-CimInstance Win32_ComputerSystem).UserName
-  if (-not $user) { Log 'Nessun utente collegato: il player partirà al prossimo accesso'; return }
+function Get-PlayerUsers {
+  # chi sta usando il player: lo riavvio nella sua sessione, anche se è bloccata o disconnessa (lì
+  # Win32_ComputerSystem.UserName è vuoto). Senza player acceso: chi ha la sessione di Windows (explorer.exe).
+  foreach ($name in 'onda-player.exe', 'explorer.exe') {
+    $users = @(Get-CimInstance Win32_Process -Filter "Name='$name'" -ErrorAction SilentlyContinue | ForEach-Object {
+        $o = Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction SilentlyContinue
+        if ($o -and $o.User -and $o.User -ne 'SYSTEM') { if ($o.Domain) { "$($o.Domain)\$($o.User)" } else { $o.User } }
+      } | Select-Object -Unique)
+    if ($users.Count -gt 0) { return $users }
+  }
+  $u = (Get-CimInstance Win32_ComputerSystem).UserName
+  if ($u) { return @($u) }
+  return @()
+}
+
+function Start-PlayerForUser([string]$exe, [string[]]$users) {
+  # il player è un'app con finestra: va avviato nella sessione di chi lo usava, non come SYSTEM
+  if (-not $users -or $users.Count -eq 0) { Log 'Nessun utente collegato: il player partirà al prossimo accesso'; return }
+  $user = $users[0]
   $name = 'Riavvio ' + [guid]::NewGuid().ToString('N').Substring(0, 8)
   try {
     $action = New-ScheduledTaskAction -Execute $exe
@@ -55,7 +70,7 @@ function Start-PlayerForUser([string]$exe) {
     Start-ScheduledTask -TaskPath '\Onda Player\' -TaskName $name
     Start-Sleep -Seconds 10
     Log "Player riavviato per $user"
-  } catch { Log "Riavvio del player non riuscito: $_" }
+  } catch { Log "Riavvio del player non riuscito per ${user}: $_" }
   finally { Unregister-ScheduledTask -TaskPath '\Onda Player\' -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue }
 }
 
@@ -91,6 +106,8 @@ try {
 
   Log "Installo Onda Player $version"
   Write-Status 'installing' ''
+  $players = Get-PlayerUsers
+  Log ("Utenti del player: " + ($(if ($players.Count) { $players -join ', ' } else { 'nessuno' })))
   Get-Process -Name 'onda-player' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 3
   $msiLog = Join-Path $work 'msiexec.log'
@@ -105,7 +122,7 @@ try {
     Copy-Item -LiteralPath $msiLog -Destination (Join-Path $tmpRoot 'onda-player-update-msiexec.log') -Force -ErrorAction SilentlyContinue
     Write-Status 'failed' "installazione non riuscita (msiexec $($p.ExitCode))"
   }
-  if ($installFolder) { Start-PlayerForUser (Join-Path $installFolder 'onda-player.exe') }
+  if ($installFolder) { Start-PlayerForUser (Join-Path $installFolder 'onda-player.exe') $players }
 } catch {
   Log "Aggiornamento scartato: $_"
   if (-not (Test-Path -LiteralPath $work)) { New-Item -ItemType Directory -Path $work -ErrorAction SilentlyContinue | Out-Null }
