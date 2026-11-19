@@ -26,6 +26,7 @@ import { dataDir, orderedDisplays } from './onda';
 import { isOn, normalize } from './hours';
 import { handleOffer, hasUpdater, updateReport } from './updater';
 import { fileServerStatus, onFileServerChange } from './fileserver';
+import { playbackReport } from './playback';
 import { keepDisplayAwake, monitorOff, monitorOn, supported, PowerResult } from './power';
 
 export type PlayerOpts = { autostart: boolean; window: 'fullscreen' | 'window'; on_top: boolean; reboot_pc: boolean;
@@ -208,7 +209,7 @@ export async function hello(): Promise<any> {
         hardware_key: hardwareKey, secret: secret(), platform: process.platform,
         version: app.getVersion().includes('onda') ? app.getVersion() : `${app.getVersion()}-onda`, hostname: hostname(), displays,
         capabilities: [...(supported() ? ['monitor_power'] : []), ...(hasUpdater() ? ['auto_update'] : [])], monitor: lastPower,
-        update: updateReport(), file_server: fileServerStatus(),
+        update: updateReport(), file_server: fileServerStatus(), playback: playbackReport(),
         player_opts: readSettings().player_opts?.updated_at ? playerOpts() : undefined, startup: startupInfo(),
       }),
       signal: AbortSignal.timeout(15000),

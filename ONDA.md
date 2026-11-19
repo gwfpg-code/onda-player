@@ -237,3 +237,10 @@ Dalla versione 4.0.13-onda.16 il player lo dice a Onda (`hello` › `file_server
 `since`). Il nome del programma lo cerca con `netstat -ano` e `tasklist` su Windows, e con `ss -ltnp` su Linux
 (`src/main/onda/fileserver.ts`). Quando la porta si occupa o si libera, il player manda subito un `hello`. Onda mostra
 l'avviso nella scheda dello schermo e in Console › Onda Player.
+
+## Riproduzione per il monitoraggio
+
+Dalla versione 4.0.13-onda.19 il player tiene l'ora dell'ultimo contenuto partito (`widgetStart` dal renderer e
+`layoutStart`) e la manda a Onda nell'`hello` (`playback`: `started_at`, `last_play_at`, `layout`;
+`src/main/onda/playback.ts`). Se lo schermo è collegato e in orario ma da N minuti non parte nessun contenuto, per
+esempio uno schermo grigio, il monitoraggio di Onda apre il problema "Nessuna riproduzione".

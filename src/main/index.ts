@@ -26,6 +26,7 @@ import { app, WebContentsView, BrowserWindow, ipcMain, session, screen } from 'e
 import { describeDisplays, targetDisplay } from './onda/onda';
 import { guardWindow, initOnda, playerOpts } from './onda/provision';
 import { initEvents } from './onda/events';
+import { notePlay } from './onda/playback';
 import { keepDisplayAwake } from './onda/power';
 import { join } from 'path';
 import { optimizer, is, electronApp } from '@electron-toolkit/utils';
@@ -501,6 +502,7 @@ ipcMain.handle('execute-xlr-event', async (_event, { eventName, payload }: { eve
 
   if (eventName === 'layoutStart') {
     state.currentLayoutId = payload.layoutId;
+    notePlay(Number(payload.layoutId) || undefined);   // Onda: per il monitoraggio "Nessuna riproduzione"
 
     if (Object.hasOwn(config.settings, 'sendCurrentLayoutAsStatusUpdate') &&
       config.settings.sendCurrentLayoutAsStatusUpdate === true

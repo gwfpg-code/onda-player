@@ -26,6 +26,7 @@ import reactionsSource from './onda-reactions.js?raw';
 import { applyLocalWebhook } from './localwebhook';
 import { dataDir } from './onda';
 import { deviceIdentity, hello, managedByOnda, ondaUrl } from './provision';
+import { notePlay } from './playback';
 
 type Trigger = (code: string) => Promise<void>;
 type Item = { media: string; kind: string; name: string; duration: number; trigger?: string };
@@ -69,6 +70,9 @@ function ctx() {
 /** Lo stato cambia solo quando parte un contenuto del loop: tra due contenuti obbligatori di fila la reazione
  * continua ad aspettare (partirebbe sopra il secondo), e parte quando arriva un contenuto non obbligatorio. */
 function onWidget(phase: string, widgetId: number) {
+  if (phase === 'start') {
+    notePlay();
+  }
   if (phase === 'start' && loopIds.has(widgetId)) {
     const on = mandatoryIds.has(widgetId);
     if (on !== mandatoryOn) {
