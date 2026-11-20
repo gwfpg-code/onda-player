@@ -71,6 +71,13 @@ Si presenta con chiave hardware e segreto, come per il provisioning, riceve il p
   `onda-widget`). Mentre è in onda un contenuto obbligatorio, una reazione senza "Può interrompere i contenuti
   obbligatori" resta in attesa (nel registro "In attesa") e parte quando nel loop arriva un contenuto non obbligatorio
   ("Eseguito"), o viene scartata dopo 5 minuti: con un loop fatto solo di contenuti obbligatori non parte mai. Una reazione già in corso non viene chiusa se sotto parte un contenuto obbligatorio.
+- **Tempi (dalla 4.0.13-onda.20):** per ogni reazione partita da un evento il player misura il tempo dalla ricezione
+  dell'evento all'attivazione del codice trigger e alla partenza del contenuto sullo schermo (`widgetStart` del widget
+  del cassetto, che Onda manda nel pacchetto come `loop.reaction_widgets`), più l'andata e ritorno dell'ultimo ping
+  (`{"type": "ping", "t"}`, Onda ripete `t` nel pong). Li manda a Onda con `{"type": "timing", …}`; se il contenuto non
+  parte entro 15 secondi lo riferisce come non visibile. Onda mostra totale e scomposizione nel registro eventi e i
+  tempi della settimana in cima al registro. Non si misurano le reazioni partite dopo un'attesa voluta (contenuto
+  obbligatorio della Direzione) né quelle annullate prima di comparire. Registro: `[ONDA] Reazione visibile dopo …`.
 - **Senza rete:** l'ultimo pacchetto regole resta in `onda/rules.json` e vale anche se all'avvio Onda non risponde;
   esiti e reazioni restano in coda (fino a 500) e partono quando il collegamento torna.
 - **Limiti:** il contenuto obbligatorio della Direzione non è ancora riconosciuto.

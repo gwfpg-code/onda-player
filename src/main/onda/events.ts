@@ -18,6 +18,11 @@
  * Contenuto obbligatorio della Direzione: Onda manda nel pacchetto i widget del loop (loop.mandatory_widgets); il
  * renderer segnala ogni widgetStart/widgetEnd (IPC onda-widget) e l'esecutore fa aspettare le reazioni che non
  * possono interromperlo (interrupt_mandatory), come nell'anteprima del pannello.
+ *
+ * Misura dei tempi: per ogni reazione partita da un evento il player riferisce a Onda (messaggio "timing") quanto è
+ * passato dalla ricezione dell'evento all'attivazione del codice trigger e alla partenza del contenuto sullo schermo
+ * (widgetStart del widget del cassetto, da loop.reaction_widgets), più l'ultimo andata e ritorno del ping. Se il
+ * contenuto non parte entro 15 secondi lo riferisce come non visibile. Onda compone il totale (events/timing.py).
  */
 import { app, ipcMain } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
@@ -42,6 +47,7 @@ const RETRY_MAX_MS = 60 * 1000;
 const STOP_CODE = 'onda-stop';             // REACTION_STOP_CODE di Onda (backend/app/engine/base.py)
 const STOP_GAP_MS = 300;                   // tra lo stop e il primo contenuto quando una reazione ricomincia
 const QUEUE_MAX = 500;                     // messaggi per Onda tenuti mentre il collegamento è perso
+const MEASURE_MAX_MS = 15 * 1000;          // contenuto della reazione non partito entro tanto: "non visibile"
 
 let OndaReactions: any = null;
 let fire: Trigger | null = null;
@@ -62,6 +68,9 @@ let mandatoryIds = new Set<number>();
 let loopIds = new Set<number>();
 let mandatoryOn = false;
 let pendingRef: Ref | null = null;          // evento della reazione in attesa della fine del contenuto obbligatorio
+let rttMs: number | null = null;            // ultimo andata e ritorno ping/pong con Onda
+type Measure = { ref: Ref; ruleId: string; recvAt: number; fireAt: number; widget: number | null; timer: NodeJS.Timeout };
+let measure: Measure | null = null;
 
 function ctx() {
   return { mandatory: mandatoryOn };
@@ -72,6 +81,11 @@ function ctx() {
 function onWidget(phase: string, widgetId: number) {
   if (phase === 'start') {
     notePlay();
+    // contenuto della reazione sullo schermo: il widget del cassetto del codice attivato (o, con un loop pubblicato
+    // prima di Onda 0.26.0, il primo widget fuori dal loop)
+    if (measure && measure.fireAt && (measure.widget !== null ? widgetId === measure.widget : !loopIds.has(widgetId))) {
+      reportTiming(true);
+    }
   }
   if (phase === 'start' && loopIds.has(widgetId)) {
     const on = mandatoryIds.has(widgetId);
@@ -124,6 +138,48 @@ function wsUrl(base: string): string {
 }
 
 // --------------------------------------------------------------------------
+// Misura dei tempi
+// --------------------------------------------------------------------------
+function startMeasure(ref: Ref, ruleId: string, recvAt: number) {
+  stopMeasure();
+  const m: Measure = { ref, ruleId, recvAt, fireAt: 0, widget: null,
+    timer: setTimeout(() => { if (measure === m) { reportTiming(false); } }, MEASURE_MAX_MS) };
+  measure = m;
+}
+
+function stopMeasure() {
+  if (measure) {
+    clearTimeout(measure.timer);
+  }
+  measure = null;
+}
+
+function noteFire(ruleId: string, code: string) {
+  if (measure && measure.ruleId === ruleId && !measure.fireAt) {
+    measure.fireAt = Date.now();
+    const w = Number(pkg?.loop?.reaction_widgets?.[code]);
+    measure.widget = Number.isFinite(w) && w > 0 ? w : null;
+  }
+}
+
+function reportTiming(visible: boolean) {
+  const m = measure;
+  if (!m) {
+    return;
+  }
+  stopMeasure();
+  const now = Date.now();
+  const msg = { type: 'timing', ...m.ref, rule_id: m.ruleId, fire_ms: m.fireAt ? m.fireAt - m.recvAt : null,
+    visible_ms: visible ? now - m.recvAt : null, rtt_ms: rttMs, visible };
+  if (visible) {
+    console.log(`[ONDA] Reazione visibile dopo ${now - m.recvAt} ms dalla ricezione dell'evento`);
+  } else {
+    console.warn('[ONDA] Contenuto della reazione non partito entro 15 secondi');
+  }
+  send(msg);
+}
+
+// --------------------------------------------------------------------------
 // Riproduzione: i codici trigger dei contenuti, uno dopo l'altro, fino alla fine prevista
 // --------------------------------------------------------------------------
 /** Ferma la sequenza; con cutContent toglie anche il contenuto ancora sullo schermo (STOP_CODE). */
@@ -158,6 +214,7 @@ function play(view: View, ref: Ref, delayMs = 0) {
     const it = items[i % items.length];
     i += 1;
     console.log(`[ONDA] Reazione "${view.name}": contenuto ${it.name} (${it.trigger})`);
+    noteFire(view.rule_id, it.trigger!);
     fire!(it.trigger!).catch((e) => console.warn('[ONDA] Trigger non eseguito', it.trigger, e));
     const ms = Math.max(1, it.duration || 10) * 1000;
     state.itemEndsAt = Date.now() + ms;
@@ -184,19 +241,25 @@ function ruleKind(ruleId: string | null): string {
   return r?.reaction?.kind || '';
 }
 
-function startReaction(view: View, ref: Ref) {
+function startReaction(view: View, ref: Ref, recvAt?: number) {
+  if (recvAt !== undefined) {
+    startMeasure(ref, view.rule_id, recvAt);   // solo se parte subito: un'attesa voluta non è un ritardo
+  }
   play(view, ref);
   send({ type: 'reaction', phase: 'started', rule_id: view.rule_id, ...ref });
 }
 
 function endReaction(ruleId: string, cutContent = true) {
   const ref = playing && playing.ruleId === ruleId ? playing.ref : {};
+  if (measure && measure.ruleId === ruleId) {
+    stopMeasure();                          // finita prima di comparire (es. annullata subito): non è un ritardo
+  }
   stopPlayback(cutContent);
   send({ type: 'reaction', phase: 'ended', rule_id: ruleId, ...ref });
 }
 
 /** Decide ed esegue; ritorna la decisione di onda-reactions.js (null se la regola è "solo uscita"). */
-export function execute(event: any, ref: Ref): any {
+export function execute(event: any, ref: Ref, recvAt: number = Date.now()): any {
   if (!executor) {
     return { result: 'discarded', rule_id: null, detail: 'Pacchetto regole non ancora ricevuto' };
   }
@@ -217,7 +280,7 @@ export function execute(event: any, ref: Ref): any {
   if (d.start) {
     const same = before && before.rule_id === d.start.rule_id && !d.closed;
     if (!same) {
-      startReaction(d.start, ref);
+      startReaction(d.start, ref, recvAt);
     } else if (d.detail === 'Reazione ricominciata') {
       // XLR ignora un contenuto del cassetto già in coda: prima lo stop, poi di nuovo il primo contenuto
       const keep = playing?.ref ?? ref;
@@ -228,8 +291,8 @@ export function execute(event: any, ref: Ref): any {
   return d;
 }
 
-function onEvent(eventId: number, event: any) {
-  const d = execute(event, { event_id: eventId });
+function onEvent(eventId: number, event: any, recvAt: number) {
+  const d = execute(event, { event_id: eventId }, recvAt);
   if (d) {
     send({ type: 'outcome', event_id: eventId, rule_id: d.rule_id, result: d.result, detail: d.detail,
       latency_ms: d.latency_ms });
@@ -238,11 +301,12 @@ function onEvent(eventId: number, event: any) {
 
 /** Evento dal webhook locale, già controllato: esegue subito e lo riferisce a Onda (anche più tardi). */
 export function executeLocal(sourceId: string, ip: string, event: any): any {
+  const recvAt = Date.now();
   hold = [];
   let d: any;
   try {
     d = execute({ type: event.type, source: sourceId, data: event.data || {} },
-      { local_source: sourceId, local_id: event.id });
+      { local_source: sourceId, local_id: event.id }, recvAt);
   } finally {
     const held = hold;
     hold = null;
@@ -341,7 +405,8 @@ function connect() {
     lastMessageAt = Date.now();
   };
   sock.onmessage = (m: any) => {
-    lastMessageAt = Date.now();
+    const recvAt = Date.now();
+    lastMessageAt = recvAt;
     let msg: any;
     try {
       msg = JSON.parse(typeof m.data === 'string' ? m.data : Buffer.from(m.data).toString('utf-8'));
@@ -357,7 +422,11 @@ function connect() {
     } else if (msg.type === 'rules') {
       onRules(msg.pkg);
     } else if (msg.type === 'event') {
-      onEvent(msg.event_id, msg.event || {});
+      onEvent(msg.event_id, msg.event || {}, recvAt);
+    } else if (msg.type === 'pong') {
+      if (typeof msg.t === 'number' && recvAt >= msg.t) {
+        rttMs = recvAt - msg.t;                 // Onda >= 0.26.0 ripete t
+      }
     } else if (msg.type === 'config') {
       // impostazioni cambiate nel pannello di Onda: le rileggo subito invece di aspettare il controllo periodico
       console.log('[ONDA] Impostazioni cambiate in Onda: le rileggo');
@@ -402,7 +471,7 @@ export function initEvents(trigger: Trigger) {
         try { ws.close(); } catch { /* già chiuso */ }
         return;
       }
-      send({ type: 'ping' });
+      send({ type: 'ping', t: Date.now() });
     }
   }, PING_MS);
   connect();
