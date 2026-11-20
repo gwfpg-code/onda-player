@@ -78,6 +78,10 @@ Si presenta con chiave hardware e segreto, come per il provisioning, riceve il p
   parte entro 15 secondi lo riferisce come non visibile. Onda mostra totale e scomposizione nel registro eventi e i
   tempi della settimana in cima al registro. Non si misurano le reazioni partite dopo un'attesa voluta (contenuto
   obbligatorio della Direzione) né quelle annullate prima di comparire. Registro: `[ONDA] Reazione visibile dopo …`.
+  Dalla 4.0.13-onda.21 vale anche il widget del cassetto del pacchetto precedente: a ogni pubblicazione del loop i
+  widget cambiano numero e per un po' il renderer può suonare il layout vecchio (o già il nuovo con il pacchetto
+  vecchio); prima la misura non riconosceva il contenuto e si perdeva in silenzio. Se la reazione arriva alla sua fine
+  senza che il contenuto sia partito, il player lo riferisce come non visibile invece di tacere.
 - **Senza rete:** l'ultimo pacchetto regole resta in `onda/rules.json` e vale anche se all'avvio Onda non risponde;
   esiti e reazioni restano in coda (fino a 500) e partono quando il collegamento torna.
 - **Limiti:** il contenuto obbligatorio della Direzione non è ancora riconosciuto.

@@ -21,8 +21,9 @@
  *
  * Misura dei tempi: per ogni reazione partita da un evento il player riferisce a Onda (messaggio "timing") quanto è
  * passato dalla ricezione dell'evento all'attivazione del codice trigger e alla partenza del contenuto sullo schermo
- * (widgetStart del widget del cassetto, da loop.reaction_widgets), più l'ultimo andata e ritorno del ping. Se il
- * contenuto non parte entro 15 secondi lo riferisce come non visibile. Onda compone il totale (events/timing.py).
+ * (widgetStart del widget del cassetto, da loop.reaction_widgets del pacchetto attuale o del precedente: a ogni
+ * pubblicazione i widget cambiano numero), più l'ultimo andata e ritorno del ping. Se il contenuto non parte entro
+ * 15 secondi, o la reazione finisce prima, lo riferisce come non visibile. Onda compone il totale (events/timing.py).
  */
 import { app, ipcMain } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
@@ -69,8 +70,11 @@ let loopIds = new Set<number>();
 let mandatoryOn = false;
 let pendingRef: Ref | null = null;          // evento della reazione in attesa della fine del contenuto obbligatorio
 let rttMs: number | null = null;            // ultimo andata e ritorno ping/pong con Onda
-type Measure = { ref: Ref; ruleId: string; recvAt: number; fireAt: number; widget: number | null; timer: NodeJS.Timeout };
+type Measure = { ref: Ref; ruleId: string; recvAt: number; fireAt: number; widgets: Set<number>; timer: NodeJS.Timeout };
 let measure: Measure | null = null;
+// cassetto del loop precedente: dopo una ripubblicazione il renderer può suonare ancora il layout vecchio (o già il
+// nuovo mentre il pacchetto è quello vecchio), e i widget del cassetto cambiano numero a ogni pubblicazione
+let prevReactionWidgets: Record<string, number> = {};
 
 function ctx() {
   return { mandatory: mandatoryOn };
@@ -83,7 +87,7 @@ function onWidget(phase: string, widgetId: number) {
     notePlay();
     // contenuto della reazione sullo schermo: il widget del cassetto del codice attivato (o, con un loop pubblicato
     // prima di Onda 0.26.0, il primo widget fuori dal loop)
-    if (measure && measure.fireAt && (measure.widget !== null ? widgetId === measure.widget : !loopIds.has(widgetId))) {
+    if (measure && measure.fireAt && (measure.widgets.size ? measure.widgets.has(widgetId) : !loopIds.has(widgetId))) {
       reportTiming(true);
     }
   }
@@ -142,7 +146,7 @@ function wsUrl(base: string): string {
 // --------------------------------------------------------------------------
 function startMeasure(ref: Ref, ruleId: string, recvAt: number) {
   stopMeasure();
-  const m: Measure = { ref, ruleId, recvAt, fireAt: 0, widget: null,
+  const m: Measure = { ref, ruleId, recvAt, fireAt: 0, widgets: new Set<number>(),
     timer: setTimeout(() => { if (measure === m) { reportTiming(false); } }, MEASURE_MAX_MS) };
   measure = m;
 }
@@ -157,8 +161,12 @@ function stopMeasure() {
 function noteFire(ruleId: string, code: string) {
   if (measure && measure.ruleId === ruleId && !measure.fireAt) {
     measure.fireAt = Date.now();
-    const w = Number(pkg?.loop?.reaction_widgets?.[code]);
-    measure.widget = Number.isFinite(w) && w > 0 ? w : null;
+    for (const v of [pkg?.loop?.reaction_widgets?.[code], prevReactionWidgets[code]]) {
+      const w = Number(v);
+      if (Number.isFinite(w) && w > 0) {
+        measure.widgets.add(w);
+      }
+    }
   }
 }
 
@@ -249,10 +257,14 @@ function startReaction(view: View, ref: Ref, recvAt?: number) {
   send({ type: 'reaction', phase: 'started', rule_id: view.rule_id, ...ref });
 }
 
-function endReaction(ruleId: string, cutContent = true) {
+function endReaction(ruleId: string, cutContent = true, natural = false) {
   const ref = playing && playing.ruleId === ruleId ? playing.ref : {};
   if (measure && measure.ruleId === ruleId) {
-    stopMeasure();                          // finita prima di comparire (es. annullata subito): non è un ritardo
+    if (natural && measure.fireAt) {
+      reportTiming(false);                  // arrivata alla fine senza che il contenuto partisse: va detto a Onda
+    } else {
+      stopMeasure();                        // annullata o sostituita prima di comparire: non è un ritardo
+    }
   }
   stopPlayback(cutContent);
   send({ type: 'reaction', phase: 'ended', rule_id: ruleId, ...ref });
@@ -327,7 +339,7 @@ function tick() {
   }
   const r = executor.tick(Date.now(), ctx());
   if (r?.ended) {
-    endReaction(r.ended);
+    endReaction(r.ended, true, true);
   } else if (r?.start) {
     const ref = pendingRef || {};
     pendingRef = null;
@@ -353,6 +365,7 @@ function onRules(next: any) {
     }
     const prev = pkg?.loop;
     pkg = next;
+    prevReactionWidgets = { ...(prev?.reaction_widgets || {}) };
     executor = ex;
     mandatoryIds = new Set([...(next.loop?.mandatory_widgets || []), ...(prev?.mandatory_widgets || [])]);
     loopIds = new Set([...(next.loop?.widgets || []), ...(prev?.widgets || [])]);
