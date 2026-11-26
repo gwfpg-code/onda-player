@@ -53,10 +53,12 @@ jobs:
         run: |
           $v = '2.8.85'
           $sha = 'd8fbed7b27ebab86df6f780f6e86f723668f3715cee521ccaa4568812aef5f3e'
-          Invoke-WebRequest "https://www.tightvnc.com/download/$v/tightvnc-$v-gpl-setup-64bit.msi" -OutFile tvnc.msi
-          if ((Get-FileHash tvnc.msi -Algorithm SHA256).Hash.ToLower() -ne $sha) { throw 'TightVNC: impronta SHA-256 diversa' }
-          $dir = Join-Path $PWD 'tvnc'
-          Start-Process msiexec.exe -Wait -ArgumentList '/a', 'tvnc.msi', '/qn', "TARGETDIR=$dir"
+          # fuori dalla cartella del progetto: altrimenti il pacchetto e i file estratti finiscono dentro l'app
+          $msi = Join-Path $env:RUNNER_TEMP 'tvnc.msi'
+          $dir = Join-Path $env:RUNNER_TEMP 'tvnc'
+          Invoke-WebRequest "https://www.tightvnc.com/download/$v/tightvnc-$v-gpl-setup-64bit.msi" -OutFile $msi
+          if ((Get-FileHash $msi -Algorithm SHA256).Hash.ToLower() -ne $sha) { throw 'TightVNC: impronta SHA-256 diversa' }
+          Start-Process msiexec.exe -Wait -ArgumentList '/a', $msi, '/qn', "TARGETDIR=$dir"
           $src = Get-ChildItem $dir -Recurse -Filter tvnserver.exe | Select-Object -First 1
           New-Item -ItemType Directory -Force installer/vnc | Out-Null
           foreach ($f in 'tvnserver.exe', 'hookldr.exe', 'screenhooks32.dll', 'screenhooks64.dll', 'sas.dll', 'LICENSE.txt') {
