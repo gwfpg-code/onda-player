@@ -16,6 +16,7 @@
  *   onda/identity.json   segreto del dispositivo (non si copia su altri dispositivi)
  *   onda/splash.<ext>    logo del cliente per la schermata di attesa
  */
+import { handleRemote, remoteAvailable } from './remote';
 import { app, BrowserWindow, ipcMain, powerMonitor, screen } from 'electron';
 import { execFileSync } from 'child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
@@ -208,7 +209,8 @@ export async function hello(): Promise<any> {
       body: JSON.stringify({
         hardware_key: hardwareKey, secret: secret(), platform: process.platform,
         version: app.getVersion().includes('onda') ? app.getVersion() : `${app.getVersion()}-onda`, hostname: hostname(), displays,
-        capabilities: [...(supported() ? ['monitor_power'] : []), ...(hasUpdater() ? ['auto_update'] : [])], monitor: lastPower,
+        capabilities: [...(supported() ? ['monitor_power'] : []), ...(hasUpdater() ? ['auto_update'] : []),
+          ...(remoteAvailable() ? ['remote'] : [])], monitor: lastPower,
         update: updateReport(), file_server: fileServerStatus(), playback: playbackReport(),
         player_opts: readSettings().player_opts?.updated_at ? playerOpts() : undefined, startup: startupInfo(),
       }),
@@ -220,6 +222,9 @@ export async function hello(): Promise<any> {
       return lastStatus;
     }
     lastStatus = { ...body, url: base };
+    if (body.remote) {
+      handleRemote(body.remote);           // controllo remoto chiesto dalla console (senza collegamento eventi)
+    }
     if (body.status === 'configured' && body.config) {
       const before = readSettings();
       const c = body.config;

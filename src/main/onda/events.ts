@@ -33,6 +33,7 @@ import { applyLocalWebhook } from './localwebhook';
 import { dataDir } from './onda';
 import { deviceIdentity, hello, managedByOnda, ondaUrl } from './provision';
 import { notePlay } from './playback';
+import { handleRemote } from './remote';
 
 type Trigger = (code: string) => Promise<void>;
 type Item = { media: string; kind: string; name: string; duration: number; trigger?: string };
@@ -440,6 +441,8 @@ function connect() {
       if (typeof msg.t === 'number' && recvAt >= msg.t) {
         rttMs = recvAt - msg.t;                 // Onda >= 0.26.0 ripete t
       }
+    } else if (msg.type === 'remote') {
+      handleRemote(msg);                       // controllo remoto dalla console di Onda
     } else if (msg.type === 'config') {
       // impostazioni cambiate nel pannello di Onda: le rileggo subito invece di aspettare il controllo periodico
       console.log('[ONDA] Impostazioni cambiate in Onda: le rileggo');

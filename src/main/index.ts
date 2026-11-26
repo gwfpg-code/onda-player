@@ -26,6 +26,7 @@ import { app, WebContentsView, BrowserWindow, ipcMain, session, screen } from 'e
 import { describeDisplays, targetDisplay } from './onda/onda';
 import { guardWindow, initOnda, playerOpts } from './onda/provision';
 import { initEvents } from './onda/events';
+import { stopRemote } from './onda/remote';
 import { notePlay } from './onda/playback';
 import { keepDisplayAwake } from './onda/power';
 import { join } from 'path';
@@ -2092,6 +2093,9 @@ app.whenReady().then(() => {
     }
   });
 });
+
+// controllo remoto: alla chiusura del player non resta un server VNC acceso
+app.on('will-quit', () => stopRemote());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
