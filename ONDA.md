@@ -16,6 +16,7 @@ repository pubblico, o una copia su richiesta, soddisfa l'obbligo. Le note di co
 | Server locale (porta 9696) solo su `127.0.0.1` e `::1`, non raggiungibile dalla LAN | `src/main/express.ts` |
 | Eventi e reazioni: collegamento con Onda (WebSocket), esecutore delle reazioni, webhook locale | `src/main/onda/events.ts`, `src/main/onda/onda-reactions.js`, `src/main/onda/localwebhook.ts` |
 | Installer: MSI "Onda Player" con UpgradeCode proprio e proprietà `ONDA_URL`, .deb, snap `onda-player` | `installer/windows/`, `forge.config.cjs`, `snap/` |
+| Controllo remoto (VNC) dalla console di Onda: TightVNC su Windows, x11vnc su Linux, solo su 127.0.0.1, collegamento in uscita verso Onda | `src/main/onda/remote.ts`, `forge.config.cjs`, `.github/workflows/onda-build.yml`, `snap/` |
 | Build su GitHub senza firma | `.github/workflows/onda-build.yml` (tolti i workflow di Xibo) |
 
 ## Provisioning da Onda
@@ -255,3 +256,28 @@ Dalla versione 4.0.13-onda.19 il player tiene l'ora dell'ultimo contenuto partit
 `layoutStart`) e la manda a Onda nell'`hello` (`playback`: `started_at`, `last_play_at`, `layout`;
 `src/main/onda/playback.ts`). Se lo schermo è collegato e in orario ma da N minuti non parte nessun contenuto, per
 esempio uno schermo grigio, il monitoraggio di Onda apre il problema "Nessuna riproduzione".
+
+## Controllo remoto (dalla 4.0.13-onda.22)
+
+Dalla scheda dello schermo in Onda (0.36.0 o successiva), chi ha il permesso "Controllo remoto VNC" (ruolo Tecnico,
+funzione della licenza) apre lo schermo del player nel browser, con mouse e tastiera o in sola visione.
+
+- **Richiesta:** arriva sul collegamento degli eventi (`{"type": "remote", "action": "start"}`) o, se il player non è
+  collegato, nella risposta al prossimo hello (campo `remote`): al massimo un minuto.
+- **Server VNC:** parte solo durante la sessione, su una porta libera di **127.0.0.1** (mai raggiungibile dalla rete
+  della sede), con una password nuova a ogni sessione.
+  - Windows: TightVNC 2.8.85 (GPLv2) in modalità applicazione (`resources/vnc/tvnserver.exe -run`, niente servizio né
+    amministratore), impostazioni in `HKCU\Software\TightVNC\Server` (`LoopbackOnly`, `RfbPort`, `Password`...). La
+    password viene tolta dal registro a fine sessione. Il workflow di build scarica il pacchetto ufficiale e ne
+    controlla l'impronta SHA-256.
+  - Linux (sessione X11): `x11vnc -localhost -once`, password in un file che x11vnc cancella appena letto. È una
+    dipendenza del .deb (e nello snap). Con Wayland vede solo le finestre X11.
+  - Il player dice a Onda se può farlo (capacità `remote` nell'hello).
+- **Collegamento:** il player apre lui una WebSocket verso Onda (`<onda>/api/player/remote/<sessione>`) con chiave
+  hardware, segreto e gettone della sessione; quando la console arriva riceve `{"type": "open"}`, si collega al server
+  VNC locale e porta i byte nei due sensi. Nessuna porta aperta nella sede.
+- **Fine:** la console chiude, Onda manda `stop`, durata massima (60 minuti) o chiusura del player: il server VNC si
+  ferma. Registro: righe `[ONDA] Controllo remoto: …`.
+- **Prova automatica (Linux):** nel repository di Onda, `sh tests/e2e/run.sh remote-player` compila questo modulo e lo
+  prova con x11vnc su uno schermo virtuale e la pagina della console (noVNC) in Chromium.
+
