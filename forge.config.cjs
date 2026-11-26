@@ -79,7 +79,9 @@ module.exports = {
     icon: ICON_PATHS[targetPlatform()],
     // Onda: aggiornatori automatici (resources/updater/), avviati come amministratore dall'attività pianificata
     // (Windows) o dall'unità systemd (Linux) che crea l'installer scaricato da Onda
-    extraResource: ['installer/updater'],
+    extraResource: ['installer/updater',
+      // Onda: server VNC per il controllo remoto (TightVNC, GPLv2), scaricato dal workflow di build in installer/vnc
+      ...(targetPlatform() === 'win32' ? ['installer/vnc'] : [])],
   },
   rebuildConfig: {},
   makers: [
@@ -100,6 +102,8 @@ module.exports = {
           icon: 'resources/linux/icons/512x512.png',
           maintainer: 'Onda',
           homepage: 'https://github.com/gwfpg-code/onda-player',
+          // Onda: server VNC per il controllo remoto dalla console (solo su richiesta, solo 127.0.0.1)
+          depends: ['x11vnc'],
         },
       },
     },

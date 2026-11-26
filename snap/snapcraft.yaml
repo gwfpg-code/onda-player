@@ -70,3 +70,5 @@ parts:
       - libgl1
       # Onda: `xset dpms force off|on` per spegnere il monitor fuori orario (src/main/onda/power.ts)
       - x11-xserver-utils
+      # Onda: server VNC del controllo remoto dalla console (solo su richiesta, solo 127.0.0.1)
+      - x11vnc

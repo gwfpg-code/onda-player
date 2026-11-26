@@ -3,4 +3,4 @@ out/
 dist/
 parts/
 prime/
-stage/
+stage/installer/vnc/
